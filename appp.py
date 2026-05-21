@@ -121,14 +121,26 @@ def save_data(
 
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
+
+import json
+
+# Kiểm tra xem có đang chạy trên Render (có biến môi trường GOOGLE_CREDS_JSON) hay không
+if os.environ.get('GOOGLE_CREDS_JSON'):
+    # Nếu chạy trên Render, tự động ghi nội dung JSON ra một file tạm thời
+    cred_path = 'service_account.json'
+    with open(cred_path, 'w') as f:
+        json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
+else:
+    # Nếu chạy trên máy cá nhân của bạn, giữ nguyên đường dẫn ổ E
+    cred_path = r"E:\qlythongttinchuan\service_account.json"
+
+# Truyền đường dẫn linh hoạt vào Google Earth Engine
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    r"E:\qlythongttinchuan\service_account.json"
+    cred_path
 )
 
 ee.Initialize(credentials)
-# =========================
-init_db()
 
 
 # =========================
