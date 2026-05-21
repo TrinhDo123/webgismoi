@@ -125,22 +125,25 @@ def save_data(
     conn.close()
 # INIT GEE
 # =========================
+# INIT GEE
+# =========================
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 cred_path = 'service_account.json'
 
-# Kiểm tra nếu chạy trên Render (Có biến môi trường cấu hình mã hóa JSON)
+# 1. Xử lý ghi file cấu hình từ biến môi trường (Nếu có)
 if os.environ.get('GOOGLE_CREDS_JSON'):
     with open(cred_path, 'w') as f:
         json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
 else:
-    # Nếu chạy ở máy local, hệ thống sẽ tự động dùng file service_account.json có sẵn của bạn
     print("Running in local mode / No GOOGLE_CREDS_JSON env detected. Using local service_account.json file.")
 
-# Định nghĩa chính xác biến credentials để truyền vào GEE
+# 2. ĐƯA RA NGOÀI KHỐI IF/ELSE: Khởi tạo biến credentials (Bắt buộc phải chạy)
 credentials = ee.ServiceAccountCredentials(
     service_account,
     cred_path
 )
+
+# 3. Kích hoạt kết nối đến Google Earth Engine
 ee.Initialize(credentials)
 
 # =========================
