@@ -23,7 +23,12 @@ client = genai.Client(
 )
 
 # =========================
+# =========================
 app = Flask(__name__)
+
+# Tự động tạo thư mục 'data' nếu chưa có để tránh lỗi SQLite trên Render
+if not os.path.exists('data'):
+    os.makedirs('data')
 
 CORS(app, resources={
     r"/*": {
@@ -842,10 +847,13 @@ Câu hỏi: {data['question']}
         "answer": answer
     })
 #=========
+#=========
 if __name__ == "__main__":
+    
+    # Khởi tạo database và tạo bảng trước khi mở server
+    init_db()
 
     port = int(os.environ.get("PORT", 5000))
-
     app.run(
         host="0.0.0.0",
         port=port
