@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8"/>
+    <title>BIẾN ĐỘNG ĐƯỜNG BỜ BIỂN</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+
+        *{
+            box-sizing:border-box;
+        }
+
+        body{
+            margin:0;
+            display:flex;
+            height:100vh;
+            font-family:'Segoe UI',sans-serif;
+            background:#f8fafc;
+        }
+
+        .sidebar-left{
+            width:340px;
+            background:white;
+            border-right:1px solid #e2e8f0;
+            overflow-y:auto;
+            padding:15px;
+        }
+
+        .sidebar-right{
+            width:460px;
+            background:white;
+            border-left:1px solid #e2e8f0;
+            overflow-y:auto;
+            padding:15px;
+        }
+
+        #map{
+            flex:1;
+            z-index:1;
+        }
+
+        .card{
+            background:#fff;
+            border-radius:12px;
+            border:1px solid #e2e8f0;
+            padding:15px;
+            margin-bottom:15px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        h3{
+            margin:0 0 12px 0;
+            font-size:13px;
+            text-transform:uppercase;
+            border-left:4px solid #4F46E5;
+            padding-left:10px;
+            color:#1e293b;
+        }
+
+        select,
+        button{
+            width:100%;
+            padding:10px;
+            border-radius:8px;
+            border:1px solid #cbd5e1;
+            margin-top:6px;
+            font-size:12px;
+        }
+
+        button{
+            background:#4F46E5;
+            color:white;
+            border:none;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
+        button:hover{
+            opacity:0.9;
+        }
+
+        .layer-item{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            border-bottom:1px solid #f1f5f9;
+            padding:7px 0;
+            font-size:12px;
+        }
+
+        .chart-box{
+            position:relative;
+            height:220px;
+        }
+
+        .info-box{
+            padding:10px;
+            border-radius:10px;
+            margin-bottom:10px;
+            border:1px solid #e2e8f0;
+            background:#f8fafc;
+            font-size:13px;
+        }
+
+        .success{
+            color:#22c55e;
+            font-weight:bold;
+        }
+
+        .danger{
+            color:#ef4444;
+            font-weight:bold;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<!-- LEFT -->
+<div class="sidebar-left">
+
+    <div class="card">
+<h2> BIẾN  ĐỘNG ĐƯỜNG BỜ BIỂN</h2>
+        <h3>📍 Cấu hình phân tích</h3>
+
+        <select id="province"></select>
+
+        <div style="display:flex; gap:5px;">
+
+            <select id="y1"></select>
+
+            <select id="y2"></select>
+
+        </div>
+
+        <button id="btnStart" onclick="startAnalysis()">
+
+            🚀 CHẠY PHÂN TÍCH
+
+        </button>
+
+    </div>
+
+    <div class="card">
+
+        <h3>🛰️ Lớp dữ liệu</h3>
+
+        <div id="layer-list"></div>
+
+    </div>
+
+    <div class="card">
+
+        <h3>📊 Thông số</h3>
+
+        <div id="stats-info">
+
+            Chưa có dữ liệu
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- RIGHT -->
+<!-- RIGHT -->
+<div class="sidebar-right">
+
+    <!-- BIỂU ĐỒ -->
+    <div class="card">
+
+        <h3>📈 Biểu đồ chỉ số</h3>
+
+        <div class="chart-box">
+            <canvas id="chart1"></canvas>
+        </div>
+
+    </div>
+
+    <!-- AI REPORT -->
+    <div class="card">
+
+        <h3>🧠 Phân tích AI & Dự báo</h3>
+
+        <div
+            id="ai-report"
+            style="
+                font-size:13px;
+                line-height:1.8;
+                text-align:justify;
+            "
+        >
+            Chưa có dữ liệu
+        </div>
+
+    </div>
+
+    <!-- CHAT AI -->
+    <div class="card">
+
+        <h3>🤖 AI trả lời câu hỏi</h3>
+
+        <textarea
+            id="ai-question"
+            style="
+                width:100%;
+                height:110px;
+                border:1px solid #ddd;
+                border-radius:10px;
+                padding:12px;
+                resize:none;
+                font-size:13px;
+            "
+            placeholder="Ví dụ: Phân tích nguy cơ xói mòn tỉnh Khánh Hòa..."
+        ></textarea>
+
+        <button
+            onclick="askAI()"
+            style="
+                margin-top:10px;
+            "
+        >
+            🚀 Gửi câu hỏi AI
+        </button>
+
+        <div
+            id="ai-answer"
+            style="
+                margin-top:15px;
+                line-height:1.8;
+                font-size:13px;
+                background:#f8fafc;
+                border:1px solid #e2e8f0;
+                border-radius:10px;
+                padding:12px;
+                min-height:80px;
+                white-space:pre-wrap;
+            "
+        >
+            AI sẽ trả lời tại đây...
+        </div>
+
+    </div>
+
+    <!-- PIE CHART -->
+    <div class="card">
+
+        <h3>🌊 Biến động diện tích</h3>
+
+        <div class="chart-box">
+            <canvas id="chart2"></canvas>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const API_URL = "http://127.0.0.1:5000/gee";
+
+const provinces = [
+
+    "An Giang",
+    "Bac Ninh",
+    "Ca Mau",
+    "Cao Bang",
+    "Dak Lak",
+    "Dien Bien",
+    "Dong Nai",
+    "Dong Thap",
+    "Gia Lai",
+    "Ha Tinh",
+    "Hung Yen",
+    "Khanh Hoa",
+    "Lai Chau",
+    "Lam Dong",
+    "Lang Son",
+    "Lao Cai",
+    "Nghe An",
+    "Ninh Binh",
+    "Phu Tho",
+    "Quang Ngai",
+    "Quang Ninh",
+    "Quang Tri",
+    "Son La",
+    "Tay Ninh",
+    "Thai Nguyen",
+    "Thanh Hoa",
+    "Can Tho",
+    "Da Nang",
+    "Ha Noi",
+    "Hai Phong",
+    "TP Ho Chi Minh",
+    "Hue",
+    "Tuyen Quang",
+    "Vinh Long"
+
+];
+
+const provinceSelect =
+    document.getElementById("province");
+
+const y1Select =
+    document.getElementById("y1");
+
+const y2Select =
+    document.getElementById("y2");
+
+provinces.forEach(p => {
+
+    provinceSelect.add(
+        new Option(p,p)
+    );
+
+});
+
+for(let y=2015;y<=2026;y++){
+
+    y1Select.add(
+        new Option(y,y)
+    );
+
+    y2Select.add(
+        new Option(y,y)
+    );
+
+}
+
+y1Select.value = 2016;
+y2Select.value = 2024;
+
+const map = L.map('map')
+.setView([16,108],6);
+
+L.tileLayer(
+    'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    {
+        attribution:'Google Satellite'
+    }
+).addTo(map);
+
+let layers = {};
+let resData = null;
+let chart1 = null;
+let chart2 = null;
+
+function buildLayerUI(){
+
+    const y1 = y1Select.value;
+    const y2 = y2Select.value;
+
+    const config = [
+
+        {id:'boundary', name:'Ranh giới'},
+        {id:'shoreline1', name:'Đường bờ '+y1},
+        {id:'shoreline2', name:'Đường bờ '+y2},
+        {id:'erosion', name:'Xói mòn'},
+        {id:'accretion', name:'Bồi tụ'},
+        {id:'ndwi1', name:'NDWI '+y1},
+        {id:'ndwi2', name:'NDWI '+y2},
+        {id:'mndwi1', name:'MNDWI '+y1},
+        {id:'mndwi2', name:'MNDWI '+y2}
+
+    ];
+
+    const list =
+        document.getElementById('layer-list');
+
+    list.innerHTML = '';
+
+    config.forEach(l => {
+
+        list.innerHTML += `
+
+            <div class="layer-item">
+
+                <span>${l.name}</span>
+
+                <input
+                    type="checkbox"
+                    id="chk_${l.id}"
+                    onchange="toggleLayer('${l.id}')"
+                >
+
+            </div>
+
+        `;
+
+    });
+
+}
+
+function toggleLayer(id){
+
+    if(!layers[id]) return;
+
+    const checked =
+        document.getElementById(
+            'chk_'+id
+        ).checked;
+
+    if(checked){
+
+        layers[id].addTo(map);
+
+    }else{
+
+        map.removeLayer(layers[id]);
+
+    }
+
+}
+
+async function startAnalysis(){
+
+    const btn =
+        document.getElementById('btnStart');
+
+    btn.innerHTML = "⌛ ĐANG XỬ LÝ...";
+    btn.disabled = true;
+
+    buildLayerUI();
+
+    try{
+
+        const province =
+            encodeURIComponent(
+                provinceSelect.value
+            );
+
+        const y1 = y1Select.value;
+        const y2 = y2Select.value;
+
+      
+`${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
+
+        console.log(url);
+
+        const response =
+            await fetch(url);
+
+        const data =
+            await response.json();
+
+        if(!response.ok){
+
+            throw new Error(
+                data.error || "Flask lỗi"
+            );
+        }
+
+        resData = data;
+
+        Object.values(layers).forEach(layer => {
+
+            if(map.hasLayer(layer)){
+
+                map.removeLayer(layer);
+
+            }
+
+        });
+
+        layers = {};
+
+        for(let k in resData.layers){
+
+            layers[k] = L.tileLayer(
+                resData.layers[k],
+                {
+                    opacity:0.8
+                }
+            );
+
+            if(
+                [
+                    'boundary',
+                    'erosion',
+                    'accretion'
+                ].includes(k)
+            ){
+
+                layers[k].addTo(map);
+
+                document.getElementById(
+                    'chk_'+k
+                ).checked = true;
+
+            }
+
+        }
+
+        const b = resData.bounds;
+
+        map.fitBounds([
+
+            [b[0][1], b[0][0]],
+
+            [b[2][1], b[2][0]]
+
+        ]);
+
+        updateStats();
+
+        renderCharts();
+
+        loadForecast();
+
+    }
+    catch(err){
+
+        console.log(err);
+
+        alert(err.message);
+
+    }
+
+    btn.innerHTML = "🚀 CHẠY PHÂN TÍCH";
+    btn.disabled = false;
+
+}
+
+function updateStats(){
+
+    if(!resData) return;
+
+    const s = resData.stats;
+
+    document.getElementById(
+        'stats-info'
+    ).innerHTML = `
+
+        <div class="info-box">
+
+            <b>Năm ${y1Select.value}</b>
+
+            <br><br>
+
+            NDWI:
+            <span class="success">
+                ${s.year1.NDWI.toFixed(4)}
+            </span>
+
+            <br>
+
+            MNDWI:
+            <span class="success">
+                ${s.year1.MNDWI.toFixed(4)}
+            </span>
+
+        </div>
+
+        <div class="info-box">
+
+            <b>Năm ${y2Select.value}</b>
+
+            <br><br>
+
+            NDWI:
+            <span class="success">
+                ${s.year2.NDWI.toFixed(4)}
+            </span>
+
+            <br>
+
+            MNDWI:
+            <span class="success">
+                ${s.year2.MNDWI.toFixed(4)}
+            </span>
+
+        </div>
+
+        <div class="info-box">
+
+            🔴 Xói mòn:
+            <span class="danger">
+                ${s.erosion_ha} ha
+            </span>
+
+            <br><br>
+
+            🟢 Bồi tụ:
+            <span class="success">
+                ${s.accretion_ha} ha
+            </span>
+
+        </div>
+
+    `;
+
+}
+// =========================
+// LOAD FORECAST AI
+// =========================
+async function loadForecast(){
+
+    try{
+
+        const province =
+            encodeURIComponent(
+                provinceSelect.value
+            );
+
+        const res =
+            await fetch(
+                `http://127.0.0.1:5000/forecast?province=${province}`
+            );
+
+        const data =
+            await res.json();
+
+        if(data.error){
+
+            document.getElementById(
+                'ai-report'
+            ).innerHTML = `
+
+                <span style="color:red">
+                    ${data.error}
+                </span>
+
+            `;
+
+            return;
+        }
+
+        const s = resData.stats;
+
+        const erosion = s.erosion_ha;
+        const accretion = s.accretion_ha;
+
+        const ndwi =
+            (
+                s.year1.NDWI +
+                s.year2.NDWI
+            ) / 2;
+
+        const mndwi =
+            (
+                s.year1.MNDWI +
+                s.year2.MNDWI
+            ) / 2;
+
+        let erosionText = "";
+        let ndwiText = "";
+        let mndwiText = "";
+
+        // =========================
+        // EROSION VS ACCRETION
+        // =========================
+        if(erosion > accretion){
+
+            erosionText = `
+                Khu vực đang có xu hướng
+                <b style="color:red">
+                    xói mòn mạnh hơn bồi tụ
+                </b>.
+                Điều này cho thấy đường bờ biển
+                có nguy cơ bị thu hẹp theo thời gian,
+                đặc biệt dưới tác động của sóng biển,
+                dòng chảy và biến đổi khí hậu.
+            `;
+
+        }
+        else if(accretion > erosion){
+
+            erosionText = `
+                Khu vực có xu hướng
+                <b style="color:green">
+                    bồi tụ mạnh hơn xói mòn
+                </b>.
+                Điều này phản ánh quá trình tích tụ
+                trầm tích đang diễn ra tương đối tốt,
+                giúp mở rộng bề mặt ven biển.
+            `;
+
+        }
+        else{
+
+            erosionText = `
+                Khu vực đang ở trạng thái
+                tương đối cân bằng giữa
+                xói mòn và bồi tụ.
+            `;
+
+        }
+
+        // =========================
+        // NDWI
+        // =========================
+        if(ndwi < -0.3){
+
+            ndwiText = `
+                Chỉ số NDWI ở mức thấp,
+                phản ánh khu vực có lượng nước bề mặt ít,
+                môi trường khô hơn và khả năng hiện diện nước thấp.
+            `;
+
+        }
+        else if(ndwi >= -0.3 && ndwi <= 0.3){
+
+            ndwiText = `
+                Chỉ số NDWI ở mức trung bình,
+                phản ánh trạng thái chuyển tiếp
+                giữa đất và nước hoặc khu vực ẩm ướt.
+            `;
+
+        }
+        else{
+
+            ndwiText = `
+                Chỉ số NDWI cao,
+                cho thấy sự hiện diện mạnh của nước bề mặt,
+                vùng ngập nước hoặc khu vực ven biển chịu tác động thủy văn lớn.
+            `;
+
+        }
+
+        // =========================
+        // MNDWI
+        // =========================
+        if(mndwi < -0.3){
+
+            mndwiText = `
+                Chỉ số MNDWI thấp,
+                phản ánh khu vực có khả năng chứa nước thấp
+                và bề mặt chủ yếu là đất hoặc thực vật.
+            `;
+
+        }
+        else if(mndwi >= -0.3 && mndwi <= 0.3){
+
+            mndwiText = `
+                Chỉ số MNDWI ở mức trung bình,
+                cho thấy khu vực có sự pha trộn
+                giữa nước và đất ngập ẩm.
+            `;
+
+        }
+        else{
+
+            mndwiText = `
+                Chỉ số MNDWI cao,
+                phản ánh khả năng tồn tại nước mặt rõ rệt,
+                đặc biệt tại khu vực ven biển hoặc đầm phá.
+            `;
+
+        }
+
+        let lastPred =
+            data[data.length-1].prediction;
+
+        let html = `
+
+        <div style="
+            line-height:1.9;
+            text-align:justify;
+            font-size:13px;
+        ">
+
+        <b style="
+            font-size:15px;
+            color:#1e293b;
+        ">
+            🧠 PHÂN TÍCH AI VEN BIỂN
+        </b>
+
+        <br><br>
+
+        Khu vực nghiên cứu:
+        <b>${provinceSelect.value}</b>
+
+        <br><br>
+
+        ${erosionText}
+
+        <br><br>
+
+        ${ndwiText}
+
+        <br><br>
+
+        ${mndwiText}
+
+        <br><br>
+
+        AI dự báo rằng đến năm
+        <b>${data[data.length-1].year}</b>
+        mức biến động có thể đạt:
+
+        <br><br>
+
+        <div style="
+            background:#fee2e2;
+            padding:12px;
+            border-radius:10px;
+            color:#b91c1c;
+            font-weight:bold;
+            text-align:center;
+            font-size:18px;
+        ">
+            ${lastPred.toFixed(2)} ha
+        </div>
+
+        <br>
+
+        <b>Khuyến nghị:</b>
+
+        <ul>
+            <li>Giám sát ảnh vệ tinh định kỳ</li>
+            <li>Phục hồi rừng ngập mặn</li>
+            <li>Ứng dụng AI cảnh báo sớm</li>
+            <li>Quản lý khai thác ven biển</li>
+            <li>Theo dõi biến động thủy văn</li>
+        </ul>
+
+        <b>🔮 Dự báo chi tiết:</b>
+
+        <br><br>
+
+        `;
+
+        data.forEach(item => {
+
+            html += `
+
+                📅 Năm ${item.year}:
+
+                <b style="color:red">
+                    ${item.prediction} ha
+                </b>
+
+                <br><br>
+
+            `;
+
+        });
+
+        html += `</div>`;
+
+        document.getElementById(
+            'ai-report'
+        ).innerHTML = html;
+
+    }
+    catch(err){
+
+        console.log(err);
+
+    }
+
+}
+async function askAI(){
+
+    const question =
+        document.getElementById('ai-question').value;
+
+    if(!question){
+        alert("Nhập câu hỏi");
+        return;
+    }
+
+    if(!resData){
+        alert("Hãy chạy phân tích trước");
+        return;
+    }
+
+    const answerBox =
+        document.getElementById('ai-answer');
+
+    answerBox.innerHTML = "⌛ AI đang phân tích dữ liệu viễn thám...";
+
+    try{
+
+        const res = await fetch(
+            'http://127.0.0.1:5000/chat_ai',
+            {
+                method:'POST',
+                headers:{
+                    'Content-Type':'application/json'
+                },
+                body:JSON.stringify({
+                    question: question,
+                    province: provinceSelect.value,
+                    stats: resData.stats
+                })
+            }
+        );
+
+        const data = await res.json();
+
+        // ⭐ QUAN TRỌNG: check HTTP status
+        if(!res.ok){
+            throw new Error(data.error || "Server error");
+        }
+
+        if(!data.answer){
+            throw new Error("AI không trả về kết quả");
+        }
+
+        answerBox.innerText = data.answer;
+
+    }
+    catch(err){
+
+        console.log(err);
+
+        answerBox.innerHTML = `
+            <span style="color:red">
+                ${err.message || "Lỗi kết nối AI"}
+            </span>
+        `;
+    }
+}
+function renderCharts(){
+
+    if(!resData) return;
+
+    if(chart1) chart1.destroy();
+    if(chart2) chart2.destroy();
+
+    const s = resData.stats;
+
+    const year1 = y1Select.value;
+    const year2 = y2Select.value;
+
+    chart1 = new Chart(
+
+        document.getElementById('chart1'),
+
+        {
+
+            type:'bar',
+
+            data:{
+
+                labels:[
+                    'NDWI ' + year1,
+                    'MNDWI ' + year1,
+                    'NDWI ' + year2,
+                    'MNDWI ' + year2
+                ],
+
+                datasets:[{
+
+                    label:'Giá trị',
+
+                    data:[
+                        s.year1.NDWI,
+                        s.year1.MNDWI,
+                        s.year2.NDWI,
+                        s.year2.MNDWI
+                    ]
+
+                }]
+
+            },
+
+            options:{
+                responsive:true,
+                maintainAspectRatio:false
+            }
+
+        }
+
+    );
+
+    chart2 = new Chart(
+
+        document.getElementById('chart2'),
+
+        {
+
+            type:'pie',
+
+            data:{
+
+                labels:[
+                    'Xói mòn',
+                    'Bồi tụ'
+                ],
+
+                datasets:[{
+
+                    data:[
+                        s.erosion_ha,
+                        s.accretion_ha
+                    ]
+
+                }]
+
+            },
+
+            options:{
+                responsive:true,
+                maintainAspectRatio:false
+            }
+
+        }
+
+    );
+
+}
+
+buildLayerUI();
+
+</script>
+
+</body>
+</html>
