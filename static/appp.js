@@ -1,6 +1,7 @@
 <script>
 
-const API_URL = "http://127.0.0.1:5000/gee";
+const API_URL =
+"https://webgis-coastline.onrender.com/gee";
 
 const provinces = [
 
@@ -176,6 +177,7 @@ async function startAnalysis(){
         const y2 = y2Select.value;
 
       
+const url =
 `${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
 
         console.log(url);
@@ -347,7 +349,7 @@ async function loadForecast(){
 
         const res =
             await fetch(
-                `http://127.0.0.1:5000/forecast?province=${province}`
+                `https://webgis-coastline.onrender.com/forecast?province=${province}`
             );
 
         const data =
@@ -617,7 +619,7 @@ async function askAI(){
     try{
 
         const res = await fetch(
-            'http://127.0.0.1:5000/chat_ai',
+'https://webgis-coastline.onrender.com/chat_ai',
             {
                 method:'POST',
                 headers:{
