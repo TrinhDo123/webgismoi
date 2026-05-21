@@ -125,7 +125,7 @@ def save_data(
 # INIT GEE
 # =========================
 
-service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+
 
 
 from flask import render_template
@@ -142,13 +142,8 @@ if os.environ.get('GOOGLE_CREDS_JSON'):
     with open(cred_path, 'w') as f:
         json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
 else:
-    # Nếu chạy trên máy của bạn
-    cred_path = 'service_account.json'
-
-credentials = ee.ServiceAccountCredentials(
-    service_account,
-    cred_path  # <--- Truyền biến cred_path (không có dấu nháy kép "")
-)
+    print("Không tìm thấy biến môi trường GOOGLE_CREDS_JSON. Vui lòng thiết lập nó với nội dung của file service_account.json.")
+    sys.exit(1)
 ee.Initialize(credentials)
 
 
