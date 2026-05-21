@@ -17,8 +17,9 @@ import numpy as np
 from google import genai
 
 
+# Đọc API Key từ biến môi trường của hệ thống
 client = genai.Client(
-    api_key="AIzaSyBHx5WItaQcOJqxjY0ipHXGnd7OMDnictM"
+    api_key=os.environ.get("GEMINI_API_KEY")
 )
 
 # =========================
@@ -136,7 +137,7 @@ else:
 
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    cred_path
+    cred_path  # <--- Truyền biến cred_path (không có dấu nháy kép "")
 )
 ee.Initialize(credentials)
 
