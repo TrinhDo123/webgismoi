@@ -1,6 +1,7 @@
 import os
 print(os.name)
 import sys
+import json
 import ee
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -124,28 +125,23 @@ def save_data(
     conn.close()
 # INIT GEE
 # =========================
+service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+cred_path = 'service_account.json'
 
-
-
-
-from flask import render_template
-
-@app.route('/')
-def home():
-    # Flask sẽ tự động tìm file index.html trong thư mục templates của bạn
-    return render_template('index.html')
-import json
-
-# Kiểm tra biến môi trường của Render
+# Kiểm tra nếu chạy trên Render (Có biến môi trường cấu hình mã hóa JSON)
 if os.environ.get('GOOGLE_CREDS_JSON'):
-    cred_path = 'service_account.json'
     with open(cred_path, 'w') as f:
         json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
 else:
-    print("Không tìm thấy biến môi trường GOOGLE_CREDS_JSON. Vui lòng thiết lập nó với nội dung của file service_account.json.")
-    sys.exit(1)
-ee.Initialize(credentials)
+    # Nếu chạy ở máy local, hệ thống sẽ tự động dùng file service_account.json có sẵn của bạn
+    print("Running in local mode / No GOOGLE_CREDS_JSON env detected. Using local service_account.json file.")
 
+# Định nghĩa chính xác biến credentials để truyền vào GEE
+credentials = ee.ServiceAccountCredentials(
+    service_account,
+    cred_path
+)
+ee.Initialize(credentials)
 
 # =========================
 # DATA
