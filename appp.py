@@ -118,25 +118,14 @@ def save_data(
     conn.close()
 # INIT GEE
 # =========================
-try:
 
-    ee.Initialize(
-        project='cach-471019'
-    )
+service_account = 'https://console.cloud.google.com/iam-admin/serviceaccounts/details/109433912155335015347?authuser=1&orgonly=true&project=webgis-coastal&supportedpurview=organizationId'
+credentials = ee.ServiceAccountCredentials(
+    service_account,
+    'service_account.json'
+)
 
-    print('✅ GEE Initialized')
-
-except Exception as e:
-
-    print('⚠️ Authenticate GEE...')
-
-    ee.Authenticate()
-
-    ee.Initialize(
-        project='fluid-furnace-471605-q6'
-    )
-
-    print('✅ GEE Connected')
+ee.Initialize(credentials)
 # =========================
 init_db()
 
@@ -836,10 +825,11 @@ Câu hỏi: {data['question']}
         "answer": answer
     })
 #=========
-if __name__ == '__main__':
+if __name__ == "__main__":
+
+    port = int(os.environ.get("PORT", 5000))
 
     app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=True
+        host="0.0.0.0",
+        port=port
     )
