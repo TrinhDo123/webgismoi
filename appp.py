@@ -123,7 +123,12 @@ def save_data(
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
 
+from flask import render_template
 
+@app.route('/')
+def home():
+    # Flask sẽ tự động tìm file index.html trong thư mục templates của bạn
+    return render_template('index.html')
 import json
 
 # Kiểm tra biến môi trường của Render
