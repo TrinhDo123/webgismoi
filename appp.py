@@ -119,10 +119,11 @@ def save_data(
 # INIT GEE
 # =========================
 
-service_account = 'https://console.cloud.google.com/iam-admin/serviceaccounts/details/109433912155335015347?authuser=1&orgonly=true&project=webgis-coastal&supportedpurview=organizationId'
+service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    'service_account.json'
+    r"E:\qlythongttinchuan\service_account.json"
 )
 
 ee.Initialize(credentials)

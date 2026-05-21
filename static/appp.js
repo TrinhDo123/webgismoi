@@ -1,4 +1,4 @@
-<script>
+
 
 const API_URL =
 "https://webgis-coastline.onrender.com/gee";
@@ -238,13 +238,13 @@ const url =
 
         const b = resData.bounds;
 
-        map.fitBounds([
+       map.fitBounds([
 
-            [b[0][1], b[0][0]],
+    [b[0][1], b[0][0]],
 
-            [b[2][1], b[2][0]]
+    [b[1][1], b[1][0]]
 
-        ]);
+]);
 
         updateStats();
 
@@ -348,9 +348,9 @@ async function loadForecast(){
             );
 
         const res =
-            await fetch(
-                `https://webgis-coastline.onrender.com/forecast?province=${province}`
-            );
+           await fetch(
+    `https://webgis-coastline.onrender.com/forecast?province=${province}`
+);
 
         const data =
             await res.json();
@@ -582,7 +582,7 @@ async function loadForecast(){
 
         });
 
-        html += `</div>`;
+       html += `</div>`;
 
         document.getElementById(
             'ai-report'
@@ -750,4 +750,3 @@ function renderCharts(){
 
 buildLayerUI();
 
-</script>
