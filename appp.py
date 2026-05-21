@@ -135,9 +135,10 @@ else:
     cred_path = r"E:\qlythongttinchuan\service_account.json"
 
 # Truyền đường dẫn linh hoạt vào Google Earth Engine
+# Truyền đường dẫn linh hoạt vào Google Earth Engine
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    "service_account.json"
+    cred_path          # <--- Đổi thành biến cred_path (không dùng dấu nháy kép "")
 )
 ee.Initialize(credentials)
 
