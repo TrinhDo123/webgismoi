@@ -137,9 +137,8 @@ else:
 # Truyền đường dẫn linh hoạt vào Google Earth Engine
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    cred_path
+    "service_account.json"
 )
-
 ee.Initialize(credentials)
 
 
