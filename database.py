@@ -1,3 +1,9 @@
+import os
+import json
+
+if os.environ.get('GOOGLE_CREDS_JSON'):
+    with open('service_account.json', 'w') as f:
+        json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
 import sqlite3
 
 conn = sqlite3.connect(
