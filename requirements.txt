@@ -21,6 +21,7 @@ google-crc32c==1.8.0
 google-genai==2.4.0
 google-resumable-media==2.9.0
 googleapis-common-protos==1.75.0
+gunicorn==26.0.0
 h11==0.16.0
 httpcore==1.0.9
 httplib2==0.31.2
@@ -31,6 +32,7 @@ Jinja2==3.1.6
 joblib==1.5.3
 MarkupSafe==3.0.3
 numpy==2.4.6
+packaging==26.2
 pandas==3.0.3
 proto-plus==1.28.0
 protobuf==7.35.0
