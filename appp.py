@@ -45,7 +45,7 @@ if GEMINI_API_KEY:
 def home():
     return jsonify({
         "status": "WebGIS API is running",
-        "gee_test": "/gee?province=Khanh%20Hoa&y1=2016&y2=2024",
+        "gee_test": "/gee?province=Khanh%20Hoa&y1=2020&y2=2024",
         "forecast_test": "/forecast?province=Khanh%20Hoa",
         "chat_ai": "/chat_ai"
     })
@@ -114,9 +114,17 @@ def save_data(province, year, ndwi, mndwi, erosion, accretion):
 
 
 # =========================
-# INIT GEE
+# INIT GEE - LAZY LOAD
 # =========================
+gee_ready = False
+
+
 def init_gee():
+
+    global gee_ready
+
+    if gee_ready:
+        return
 
     service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
@@ -139,10 +147,15 @@ def init_gee():
         "service_account.json"
     )
 
-    ee.Initialize(credentials)
+    try:
+        ee.Initialize(credentials)
+    except Exception:
+        pass
+
+    gee_ready = True
 
 
-init_gee()
+# CHỈ INIT DATABASE KHI START, KHÔNG INIT GEE Ở ĐÂY
 init_db()
 
 
@@ -415,6 +428,9 @@ def calculate_area(mask, band_name, geometry):
 def run_analysis():
 
     try:
+
+        # INIT GEE LAZY LOAD
+        init_gee()
 
         province = request.args.get("province")
         y1 = request.args.get("y1")
