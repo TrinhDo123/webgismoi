@@ -9,34 +9,53 @@ import sqlite3
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 import io
-
-
 import numpy as np
-
-
-
 from google import genai
-
 
 # Đọc API Key từ biến môi trường của hệ thống
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
 )
 
-# =========================
-# =========================
 app = Flask(__name__)
 
-# Tự động tạo thư mục 'data' và database SQLite ngay khi khởi tạo App (Bất kể chạy local hay Gunicorn)
+# ========================================================
+# 1. ĐỊNH NGHĨA HÀM TRƯỚC (Di chuyển khối này từ dưới lên đây)
+# ========================================================
+def init_db():
+    conn = sqlite3.connect(
+        'data/coastal.db'
+    )
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS coastal_analysis(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        province TEXT,
+        year INTEGER,
+        ndwi REAL,
+        mndwi REAL,
+        erosion REAL,
+        accretion REAL
+    )
+    ''')
+    conn.commit()
+    conn.close()
+
+# ========================================================
+# 2. GỌI LỆNH SAU (Đảm bảo thư mục và DB được khởi tạo)
+# ========================================================
 if not os.path.exists('data'):
     os.makedirs('data')
-init_db()  # <--- ĐƯA LỆNH NÀY LÊN ĐÂY
+
+init_db()  # <--- Bây giờ gọi ở đây Python sẽ hiểu ngay lập tức!
 
 CORS(app, resources={
     r"/*": {
         "origins": "*"
     }
 })
+
+# Các phần code phía dưới (save_data, INIT GEE, các Route...) giữ nguyên không thay đổi
 # SAVE DATA
 # =========================
 # INIT DATABASE
