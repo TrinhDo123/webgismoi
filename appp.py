@@ -7,7 +7,7 @@ import ee
 import numpy as np
 import pandas as pd
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 from sklearn.linear_model import LinearRegression
 from google import genai
@@ -43,24 +43,7 @@ if GEMINI_API_KEY:
 # =========================
 @app.route("/")
 def index():
-    """
-    Mở giao diện WebGIS nếu có index.html.
-    Nếu chưa có index.html thì trả JSON health.
-    """
-
-    if os.path.exists("index.html"):
-        return send_from_directory(
-            os.getcwd(),
-            "index.html"
-        )
-
-    return jsonify({
-        "status": "WebGIS API is running",
-        "gee_test": "/gee?province=Da%20Nang&y1=2020&y2=2024",
-        "gee_heavy_test": "/gee_heavy?province=Da%20Nang&y1=2020&y2=2024&layer=shoreline1",
-        "forecast_test": "/forecast?province=Da%20Nang",
-        "chat_ai": "/chat_ai"
-    })
+    return render_template("index.html")
 
 
 # =========================
