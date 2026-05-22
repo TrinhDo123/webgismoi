@@ -75,6 +75,7 @@ def init_db():
     """)
 
     conn.commit()
+
     conn.close()
 
 
@@ -106,6 +107,7 @@ def save_data(province, year, ndwi, mndwi, erosion, accretion):
     ))
 
     conn.commit()
+
     conn.close()
 
 
@@ -177,7 +179,8 @@ def init_gee():
     gee_ready = True
 
 
-# CHỈ INIT DATABASE KHI START
+# Chỉ init database khi start app
+# Không init Earth Engine ở đây để tránh Render timeout port
 init_db()
 
 
@@ -249,6 +252,7 @@ def mask_l8_sr(image):
     qa = image.select("QA_PIXEL")
 
     cloud = qa.bitwiseAnd(1 << 3).eq(0)
+
     shadow = qa.bitwiseAnd(1 << 4).eq(0)
 
     mask = cloud.And(shadow)
@@ -277,7 +281,7 @@ def mask_l8_sr(image):
 
 
 # =========================
-# GET ANALYSIS
+# GET ANALYSIS - OPTIMIZED FOR RENDER
 # =========================
 def get_analysis(offshore_zone, year):
 
@@ -296,8 +300,9 @@ def get_analysis(offshore_zone, year):
                 60
             )
         )
+        .sort("CLOUD_COVER")
         .map(mask_l8_sr)
-        .limit(50)
+        .limit(10)
     )
 
     count = dataset.size().getInfo()
@@ -309,12 +314,14 @@ def get_analysis(offshore_zone, year):
 
     img = (
         dataset
-        .median()
+        .first()
         .clip(offshore_zone)
     )
 
     green = img.select("SR_B3")
+
     nir = img.select("SR_B5")
+
     swir = img.select("SR_B6")
 
     ndwi = (
@@ -343,9 +350,9 @@ def get_analysis(offshore_zone, year):
 
     water = water.updateMask(
         water.connectedPixelCount(
-            50,
+            30,
             True
-        ).gte(50)
+        ).gte(30)
     )
 
     edge = (
@@ -357,20 +364,32 @@ def get_analysis(offshore_zone, year):
         .selfMask()
     )
 
-    stats = (
-        ndwi.addBands(mndwi)
-        .reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=offshore_zone,
-            scale=120,
-            bestEffort=True,
-            tileScale=4,
-            maxPixels=1e10
+    try:
+
+        stats = (
+            ndwi.addBands(mndwi)
+            .reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=offshore_zone,
+                scale=500,
+                bestEffort=True,
+                tileScale=16,
+                maxPixels=1e8
+            )
+            .getInfo()
         )
-        .getInfo()
-    )
+
+    except Exception as e:
+
+        print("STATS ERROR:", e)
+
+        stats = {
+            "NDWI": 0,
+            "MNDWI": 0
+        }
 
     if not stats:
+
         stats = {
             "NDWI": 0,
             "MNDWI": 0
@@ -386,32 +405,45 @@ def get_analysis(offshore_zone, year):
 
 
 # =========================
-# CALCULATE AREA
+# CALCULATE AREA - SAFE
 # =========================
 def calculate_area(mask, band_name, geometry):
 
-    area_image = (
-        ee.Image.pixelArea()
-        .updateMask(mask)
-        .rename(band_name)
-    )
+    try:
 
-    result = area_image.reduceRegion(
-        reducer=ee.Reducer.sum(),
-        geometry=geometry,
-        scale=120,
-        bestEffort=True,
-        tileScale=4,
-        maxPixels=1e10
-    ).getInfo()
-
-    if result and band_name in result and result[band_name]:
-        return round(
-            result[band_name] / 10000,
-            2
+        area_image = (
+            ee.Image.pixelArea()
+            .updateMask(mask)
+            .rename(band_name)
         )
 
-    return 0
+        result = area_image.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geometry,
+            scale=500,
+            bestEffort=True,
+            tileScale=16,
+            maxPixels=1e8
+        ).getInfo()
+
+        if (
+            result and
+            band_name in result and
+            result[band_name]
+        ):
+
+            return round(
+                result[band_name] / 10000,
+                2
+            )
+
+        return 0
+
+    except Exception as e:
+
+        print("AREA ERROR:", e)
+
+        return 0
 
 
 # =========================
@@ -425,15 +457,19 @@ def run_analysis():
         init_gee()
 
         province = request.args.get("province")
+
         y1 = request.args.get("y1")
+
         y2 = request.args.get("y2")
 
         if not province or not y1 or not y2:
+
             return jsonify({
                 "error": "Thiếu province, y1 hoặc y2"
             }), 400
 
         if province in non_coastal:
+
             return jsonify({
                 "error": f"Tỉnh {province} không giáp biển"
             }), 400
@@ -447,6 +483,7 @@ def run_analysis():
         )
 
         if not selected:
+
             return jsonify({
                 "error": f"Không tìm thấy tỉnh {province}"
             }), 404
@@ -458,9 +495,21 @@ def run_analysis():
             )
         )
 
-        count_region = region.size().getInfo()
+        try:
+
+            count_region = region.size().getInfo()
+
+        except Exception as e:
+
+            print("REGION ERROR:", e)
+
+            return jsonify({
+                "error": "Không đọc được ranh giới tỉnh từ Google Earth Engine",
+                "type": type(e).__name__
+            }), 500
 
         if count_region == 0:
+
             return jsonify({
                 "error": f"Không tìm thấy ranh giới GEE cho {province}"
             }), 404
@@ -539,6 +588,22 @@ def run_analysis():
             erosion_ha,
             accretion_ha
         )
+
+        try:
+
+            bounds = aoi.bounds().getInfo()["coordinates"][0]
+
+        except Exception as e:
+
+            print("BOUNDS ERROR:", e)
+
+            bounds = [
+                [108.0, 16.0],
+                [109.0, 16.0],
+                [109.0, 17.0],
+                [108.0, 17.0],
+                [108.0, 16.0]
+            ]
 
         result = {
 
@@ -644,8 +709,7 @@ def run_analysis():
                 "accretion_ha": float(accretion_ha)
             },
 
-            "bounds":
-            aoi.bounds().getInfo()["coordinates"][0]
+            "bounds": bounds
         }
 
         return jsonify(result)
@@ -669,6 +733,7 @@ def forecast():
     province = request.args.get("province")
 
     if not province:
+
         return jsonify({
             "error": "Thiếu province"
         }), 400
@@ -691,6 +756,7 @@ def forecast():
     conn.close()
 
     if len(df) < 2:
+
         return jsonify({
             "error": "Không đủ dữ liệu"
         })
@@ -730,6 +796,7 @@ def chat_ai():
     try:
 
         if not client:
+
             return jsonify({
                 "error": "Thiếu GEMINI_API_KEY trong Render Environment"
             }), 500
@@ -737,6 +804,7 @@ def chat_ai():
         data = request.get_json()
 
         if not data:
+
             return jsonify({
                 "error": "Không có dữ liệu gửi lên"
             }), 400
@@ -757,6 +825,7 @@ Hãy trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu, có nhận x�
         answer = getattr(response, "text", None)
 
         if not answer:
+
             return jsonify({
                 "error": "AI không phản hồi"
             }), 500
