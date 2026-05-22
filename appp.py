@@ -45,8 +45,8 @@ if GEMINI_API_KEY:
 def home():
     return jsonify({
         "status": "WebGIS API is running",
-        "gee_test": "/gee?province=Khanh%20Hoa&y1=2020&y2=2024",
-        "forecast_test": "/forecast?province=Khanh%20Hoa",
+        "gee_test": "/gee?province=Da%20Nang&y1=2020&y2=2024",
+        "forecast_test": "/forecast?province=Da%20Nang",
         "chat_ai": "/chat_ai"
     })
 
@@ -58,9 +58,7 @@ def init_db():
 
     os.makedirs("data", exist_ok=True)
 
-    conn = sqlite3.connect(
-        "data/coastal.db"
-    )
+    conn = sqlite3.connect("data/coastal.db")
 
     cursor = conn.cursor()
 
@@ -84,9 +82,7 @@ def save_data(province, year, ndwi, mndwi, erosion, accretion):
 
     os.makedirs("data", exist_ok=True)
 
-    conn = sqlite3.connect(
-        "data/coastal.db"
-    )
+    conn = sqlite3.connect("data/coastal.db")
 
     cursor = conn.cursor()
 
@@ -118,10 +114,17 @@ def save_data(province, year, ndwi, mndwi, erosion, accretion):
 # =========================
 gee_ready = False
 
+provinces_fc = None
+gsw = None
+permanent_water = None
+
 
 def init_gee():
 
     global gee_ready
+    global provinces_fc
+    global gsw
+    global permanent_water
 
     if gee_ready:
         return
@@ -147,15 +150,34 @@ def init_gee():
         "service_account.json"
     )
 
-    try:
-        ee.Initialize(credentials)
-    except Exception:
-        pass
+    ee.Initialize(credentials)
+
+    provinces_fc = (
+        ee.FeatureCollection(
+            "FAO/GAUL/2015/level1"
+        )
+        .filter(
+            ee.Filter.eq(
+                "ADM0_NAME",
+                "Viet Nam"
+            )
+        )
+    )
+
+    gsw = ee.Image(
+        "JRC/GSW1_4/GlobalSurfaceWater"
+    )
+
+    permanent_water = (
+        gsw
+        .select("occurrence")
+        .gt(80)
+    )
 
     gee_ready = True
 
 
-# CHỈ INIT DATABASE KHI START, KHÔNG INIT GEE Ở ĐÂY
+# CHỈ INIT DATABASE KHI START
 init_db()
 
 
@@ -220,33 +242,6 @@ non_coastal = [
 
 
 # =========================
-# GEE DATASET
-# =========================
-provinces_fc = (
-    ee.FeatureCollection(
-        "FAO/GAUL/2015/level1"
-    )
-    .filter(
-        ee.Filter.eq(
-            "ADM0_NAME",
-            "Viet Nam"
-        )
-    )
-)
-
-
-gsw = ee.Image(
-    "JRC/GSW1_4/GlobalSurfaceWater"
-)
-
-permanent_water = (
-    gsw
-    .select("occurrence")
-    .gt(80)
-)
-
-
-# =========================
 # CLOUD MASK
 # =========================
 def mask_l8_sr(image):
@@ -254,7 +249,6 @@ def mask_l8_sr(image):
     qa = image.select("QA_PIXEL")
 
     cloud = qa.bitwiseAnd(1 << 3).eq(0)
-
     shadow = qa.bitwiseAnd(1 << 4).eq(0)
 
     mask = cloud.And(shadow)
@@ -412,7 +406,6 @@ def calculate_area(mask, band_name, geometry):
     ).getInfo()
 
     if result and band_name in result and result[band_name]:
-
         return round(
             result[band_name] / 10000,
             2
@@ -429,7 +422,6 @@ def run_analysis():
 
     try:
 
-        # INIT GEE LAZY LOAD
         init_gee()
 
         province = request.args.get("province")
