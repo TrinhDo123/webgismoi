@@ -119,22 +119,40 @@ def save_data(
 # INIT GEE
 # =========================
 
+# import json
+
+# service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+
+# if os.environ.get("GOOGLE_CREDS_JSON"):
+#     info = json.loads(os.environ["GOOGLE_CREDS_JSON"])
+#     cred_path = "/tmp/service_account.json"
+#     with open(cred_path, "w") as f:
+#         json.dump(info, f)
+# else:
+#     cred_path = "service_account.json"
+
+# credentials = ee.ServiceAccountCredentials(
+#     service_account,
+#     cred_path
+# )
+
+# ee.Initialize(credentials)
+
 import json
+import os
+import ee
+from google.oauth2 import service_account
 
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
 if os.environ.get("GOOGLE_CREDS_JSON"):
     info = json.loads(os.environ["GOOGLE_CREDS_JSON"])
-    cred_path = "/tmp/service_account.json"
-    with open(cred_path, "w") as f:
-        json.dump(info, f)
+    credentials = ee.ServiceAccountCredentials(service_account, info)
 else:
-    cred_path = "service_account.json"
-
-credentials = ee.ServiceAccountCredentials(
-    service_account,
-    cred_path
-)
+    credentials = ee.ServiceAccountCredentials(
+        service_account,
+        "service_account.json"
+    )
 
 ee.Initialize(credentials)
 
