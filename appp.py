@@ -25,6 +25,17 @@ CORS(app, resources={
 })
 
 
+@app.errorhandler(Exception)
+def handle_global_exception(e):
+    print("GLOBAL ERROR:")
+    print(traceback.format_exc())
+
+    return jsonify({
+        "error": str(e),
+        "type": type(e).__name__
+    }), 500
+
+
 # =========================
 # GEMINI AI
 # =========================
@@ -162,83 +173,63 @@ def init_gee():
         return
 
     info = None
-    key_path = None
 
-    # =========================
-    # 1) Ưu tiên key từ Render Environment
-    #    Dán toàn bộ nội dung private-key JSON vào GOOGLE_CREDS_JSON
-    # =========================
-    env_json = (
-        os.environ.get("GOOGLE_CREDS_JSON")
-        or os.environ.get("GEE_PRIVATE_KEY_JSON")
-    )
-
-    if env_json:
+    # Ưu tiên dùng ENV trên Render
+    if os.environ.get("GOOGLE_CREDS_JSON"):
 
         try:
-            info = json.loads(env_json)
+            info = json.loads(
+                os.environ["GOOGLE_CREDS_JSON"]
+            )
 
         except json.JSONDecodeError as e:
             raise ValueError(
-                "GOOGLE_CREDS_JSON / GEE_PRIVATE_KEY_JSON không phải JSON hợp lệ. "
-                "Hãy copy nguyên nội dung file private-key JSON vào Render Environment."
+                "GOOGLE_CREDS_JSON không phải JSON hợp lệ. Hãy copy nguyên nội dung file JSON service account vào Render Environment."
             ) from e
 
-        key_path = "service_account_runtime.json"
-
-        with open(key_path, "w", encoding="utf-8") as f:
+        with open("service_account.json", "w", encoding="utf-8") as f:
             json.dump(info, f)
 
-    # =========================
-    # 2) Nếu chạy local thì tự tìm file key trong thư mục project
-    #    Hỗ trợ cả private-key.json.json bạn vừa upload
-    # =========================
+    # Nếu chạy local thì dùng file service_account.json
     else:
 
-        possible_key_files = [
-            "service_account.json",
-            "private-key.json",
-            "private-key.json.json"
-        ]
-
-        for file_name in possible_key_files:
-            if os.path.exists(file_name):
-                key_path = file_name
-                break
-
-        if not key_path:
+        if not os.path.exists("service_account.json"):
             raise FileNotFoundError(
-                "Không tìm thấy file key. Hãy đặt service_account.json hoặc private-key.json.json "
-                "trong thư mục project khi chạy local, hoặc cấu hình GOOGLE_CREDS_JSON trên Render."
+                "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
             )
 
-        with open(key_path, "r", encoding="utf-8") as f:
+        with open("service_account.json", "r", encoding="utf-8") as f:
             info = json.load(f)
 
-    # =========================
-    # 3) Kiểm tra nội dung key
-    # =========================
-    required_fields = [
-        "client_email",
-        "private_key",
-        "project_id"
-    ]
+    # Kiểm tra key bắt buộc
+    if not info:
+        raise ValueError(
+            "Không đọc được thông tin service account"
+        )
 
-    for field in required_fields:
-        if field not in info or not info[field]:
-            raise ValueError(
-                f"File private-key thiếu trường bắt buộc: {field}"
-            )
+    if "client_email" not in info:
+        raise ValueError(
+            "service_account.json thiếu client_email"
+        )
+
+    if "private_key" not in info:
+        raise ValueError(
+            "service_account.json thiếu private_key"
+        )
+
+    if "project_id" not in info:
+        raise ValueError(
+            "service_account.json thiếu project_id"
+        )
 
     service_account = info["client_email"]
     project_id = info["project_id"]
 
     credentials = ee.ServiceAccountCredentials(
         service_account,
-        key_path
+        "service_account.json"
     )
 
-    # Khởi tạo Earth Engine bằng đúng project trong private-key
     try:
         ee.Initialize(
             credentials,
@@ -343,11 +334,6 @@ non_coastal = [
 # =========================
 def get_selected(province):
 
-    if province in non_coastal:
-        raise ValueError(
-            f"Tỉnh {province} không giáp biển"
-        )
-
     selected = next(
         (
             d for d in coastal_data
@@ -357,12 +343,11 @@ def get_selected(province):
     )
 
     if not selected:
-        raise LookupError(
-            f"Không tìm thấy tỉnh {province}"
+        raise ValueError(
+            f"Tỉnh {province} không giáp biển hoặc chưa cấu hình vùng bờ biển"
         )
 
     return selected
-
 
 def get_region_and_zone(province):
 
@@ -480,20 +465,13 @@ def get_analysis(offshore_zone, year, include_heavy=False):
         .filter(
             ee.Filter.lt(
                 "CLOUD_COVER",
-                60
+                70
             )
         )
         .sort("CLOUD_COVER")
         .map(mask_l8_sr)
-        .limit(8)
+        .limit(3)
     )
-
-    count = dataset.size().getInfo()
-
-    if count == 0:
-        raise Exception(
-            f"Không có ảnh Landsat cho năm {year}. Hãy thử năm khác."
-        )
 
     img = (
         dataset
@@ -525,28 +503,6 @@ def get_analysis(offshore_zone, year, include_heavy=False):
             "MNDWI": 0
         }
     }
-
-    try:
-
-        stats = (
-            ndwi.addBands(mndwi)
-            .reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=offshore_zone,
-                scale=700,
-                bestEffort=True,
-                tileScale=16,
-                maxPixels=5e7
-            )
-            .getInfo()
-        )
-
-        if stats:
-            result["vals"] = stats
-
-    except Exception as e:
-
-        print("STATS ERROR:", e)
 
     if include_heavy:
 
@@ -1018,61 +974,170 @@ def forecast():
 
 
 # =========================
-# CHAT AI GIS
+# CHAT AI GIS - CÓ FALLBACK KHI GEMINI QUÁ TẢI
 # =========================
+def build_local_ai_answer(province, stats, question):
+    stats = stats or {}
+    year1 = stats.get("year1", {}) or {}
+    year2 = stats.get("year2", {}) or {}
+
+    ndwi1 = float(year1.get("NDWI", 0) or 0)
+    mndwi1 = float(year1.get("MNDWI", 0) or 0)
+    ndwi2 = float(year2.get("NDWI", 0) or 0)
+    mndwi2 = float(year2.get("MNDWI", 0) or 0)
+
+    erosion = float(stats.get("erosion_ha", 0) or 0)
+    accretion = float(stats.get("accretion_ha", 0) or 0)
+
+    avg_ndwi = (ndwi1 + ndwi2) / 2
+    avg_mndwi = (mndwi1 + mndwi2) / 2
+
+    if erosion > accretion:
+        trend = (
+            "Khu vực có xu hướng xói mòn mạnh hơn bồi tụ. "
+            "Điều này cho thấy đường bờ có nguy cơ bị thu hẹp hoặc mất ổn định."
+        )
+    elif accretion > erosion:
+        trend = (
+            "Khu vực có xu hướng bồi tụ mạnh hơn xói mòn. "
+            "Điều này cho thấy quá trình tích tụ trầm tích đang chiếm ưu thế."
+        )
+    else:
+        trend = (
+            "Khu vực tương đối cân bằng giữa xói mòn và bồi tụ, "
+            "hoặc dữ liệu hiện tại chưa cho thấy chênh lệch lớn."
+        )
+
+    if avg_ndwi < -0.3:
+        ndwi_text = "NDWI thấp, tín hiệu nước mặt yếu, khu vực chủ yếu là đất hoặc bề mặt khô."
+    elif avg_ndwi <= 0.3:
+        ndwi_text = "NDWI trung bình, thể hiện vùng chuyển tiếp giữa đất và nước hoặc vùng ẩm ven biển."
+    else:
+        ndwi_text = "NDWI cao, cho thấy tín hiệu nước mặt rõ rệt."
+
+    if avg_mndwi < -0.3:
+        mndwi_text = "MNDWI thấp, khả năng nhận diện nước mặt không rõ."
+    elif avg_mndwi <= 0.3:
+        mndwi_text = "MNDWI trung bình, phù hợp với vùng đất ngập nước, cửa sông hoặc ven biển."
+    else:
+        mndwi_text = "MNDWI cao, phản ánh vùng nước mặt rõ ràng."
+
+    answer = f"""
+PHÂN TÍCH AI VEN BIỂN
+
+Khu vực nghiên cứu: {province}
+
+Câu hỏi của bạn: {question}
+
+1. Nhận xét chung:
+{trend}
+
+2. Chỉ số NDWI:
+- NDWI năm đầu: {ndwi1:.4f}
+- NDWI năm sau: {ndwi2:.4f}
+- Nhận xét: {ndwi_text}
+
+3. Chỉ số MNDWI:
+- MNDWI năm đầu: {mndwi1:.4f}
+- MNDWI năm sau: {mndwi2:.4f}
+- Nhận xét: {mndwi_text}
+
+4. Biến động diện tích:
+- Xói mòn: {erosion:.2f} ha
+- Bồi tụ: {accretion:.2f} ha
+
+5. Khuyến nghị:
+- Theo dõi ảnh vệ tinh định kỳ để cập nhật biến động đường bờ.
+- Ưu tiên kiểm tra thực địa tại các đoạn bờ có xói mòn cao.
+- Kết hợp dữ liệu sóng, thủy triều, dòng chảy, rừng ngập mặn và hoạt động khai thác ven biển.
+- Dùng kết quả WebGIS như công cụ hỗ trợ cảnh báo sớm, không thay thế hoàn toàn khảo sát thực địa.
+
+Ghi chú: Câu trả lời này được tạo bằng bộ phân tích nội bộ khi Gemini đang quá tải, thiếu API key hoặc tạm thời không phản hồi.
+"""
+    return answer.strip()
+
+
 @app.route("/chat_ai", methods=["POST"])
 def chat_ai():
 
     try:
-
-        if not client:
-
-            return jsonify({
-                "error": "Thiếu GEMINI_API_KEY trong Render Environment"
-            }), 500
-
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if not data:
-
             return jsonify({
-                "error": "Không có dữ liệu gửi lên"
-            }), 400
+                "answer": "Không có dữ liệu gửi lên để phân tích.",
+                "source": "local"
+            })
 
-        prompt = f"""
-Tỉnh: {data.get('province')}
-Dữ liệu: {data.get('stats')}
-Câu hỏi: {data.get('question')}
+        province = data.get("province", "Không rõ")
+        stats = data.get("stats", {}) or {}
+        question = data.get("question", "") or ""
 
-Hãy trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu, có nhận xét về xói mòn, bồi tụ, NDWI và MNDWI.
-"""
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
+        local_answer = build_local_ai_answer(
+            province,
+            stats,
+            question
         )
 
-        answer = getattr(response, "text", None)
+        if not client:
+            return jsonify({
+                "answer": local_answer,
+                "source": "local",
+                "warning": "Thiếu GEMINI_API_KEY nên hệ thống dùng phân tích nội bộ."
+            })
 
-        if not answer:
+        prompt = f"""
+Bạn là chuyên gia GIS, viễn thám và biến động đường bờ biển.
+
+Tỉnh/vùng nghiên cứu: {province}
+Dữ liệu thống kê: {stats}
+Câu hỏi người dùng: {question}
+
+Hãy trả lời bằng tiếng Việt, rõ ràng, có cấu trúc:
+1. Nhận xét xói mòn và bồi tụ.
+2. Nhận xét NDWI/MNDWI.
+3. Đánh giá nguy cơ biến động đường bờ.
+4. Đề xuất giải pháp quản lý ven biển.
+"""
+
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+
+            answer = getattr(response, "text", None)
+
+            if answer:
+                return jsonify({
+                    "answer": answer,
+                    "source": "gemini"
+                })
 
             return jsonify({
-                "error": "AI không phản hồi"
-            }), 500
+                "answer": local_answer,
+                "source": "local",
+                "warning": "Gemini không trả về nội dung nên dùng phân tích nội bộ."
+            })
 
-        return jsonify({
-            "answer": answer
-        })
+        except Exception as gemini_error:
+            print("GEMINI ERROR:")
+            print(traceback.format_exc())
+
+            return jsonify({
+                "answer": local_answer,
+                "source": "local",
+                "warning": str(gemini_error)
+            })
 
     except Exception as e:
-
         print(traceback.format_exc())
 
         return jsonify({
-            "error": str(e),
-            "type": type(e).__name__
-        }), 500
-
+            "answer": "AI nội bộ không thể xử lý câu hỏi lúc này. Hãy chạy lại phân tích hoặc thử câu hỏi ngắn hơn.",
+            "source": "local",
+            "warning": str(e)
+        })
 
 # =========================
 # RUN LOCAL
