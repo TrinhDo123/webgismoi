@@ -39,13 +39,13 @@ if GEMINI_API_KEY:
 
 
 # =========================
-# HOME ROUTE
+# HOME ROUTE - MỞ GIAO DIỆN WEBGIS
 # =========================
 @app.route("/")
 def index():
     """
-    Trả giao diện web nếu có index.html.
-    Nếu chưa có frontend trong host thì trả JSON health.
+    Mở giao diện WebGIS nếu có index.html.
+    Nếu chưa có index.html thì trả JSON health.
     """
 
     if os.path.exists("index.html"):
@@ -63,6 +63,9 @@ def index():
     })
 
 
+# =========================
+# HEALTH ROUTE - TEST API
+# =========================
 @app.route("/health")
 def health():
     return jsonify({
@@ -74,6 +77,9 @@ def health():
     })
 
 
+# =========================
+# SERVE STATIC FILES
+# =========================
 @app.route("/appp.js")
 def serve_js():
     return send_from_directory(
@@ -159,7 +165,6 @@ provinces_fc = None
 gsw = None
 permanent_water = None
 
-# Cache nhẹ trong RAM để cùng một request không phải tạo tile lại nhiều lần
 tile_cache = {}
 
 
@@ -284,7 +289,6 @@ non_coastal = [
     "Tay Ninh",
     "Ha Noi"
 ]
-
 
 
 # =========================
@@ -532,6 +536,7 @@ def get_analysis(offshore_zone, year, include_heavy=False):
 
     return result
 
+
 # =========================
 # CALCULATE AREA - SAFE
 # =========================
@@ -610,8 +615,6 @@ def run_analysis():
             include_heavy=False
         )
 
-        # Không ghi fake erosion/accretion vào DB để tránh ảnh hưởng dữ liệu thật.
-        # Nếu cần lưu dữ liệu thật, nên lưu ở route riêng sau khi đã tính diện tích thành công.
         erosion_ha = 0
         accretion_ha = 0
 
@@ -902,6 +905,7 @@ def gee_heavy():
             "error": str(e),
             "type": type(e).__name__
         }), 500
+
 
 # =========================
 # FORECAST AI
