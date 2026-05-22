@@ -15,7 +15,16 @@ from google import genai
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+@app.errorhandler(Exception)
+def handle_global_exception(e):
 
+    print("GLOBAL ERROR:")
+    print(traceback.format_exc())
+
+    return jsonify({
+        "error": str(e),
+        "type": type(e).__name__
+    }), 500
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -116,15 +125,70 @@ def init_gee():
 
     credentials = ee.ServiceAccountCredentials(info["client_email"], "service_account.json")
 
-    try:
-        ee.Initialize(credentials, project=info["project_id"])
-    except TypeError:
-        ee.Initialize(credentials)
+    
+    gee_ready = False
+provinces_fc = None
+gsw = None
+permanent_water = None
+
+
+def init_gee():
+
+    global gee_ready
+    global provinces_fc
+    global gsw
+    global permanent_water
+
+    if gee_ready:
+        return
+
+    if not os.environ.get("GOOGLE_CREDS_JSON"):
+        raise ValueError(
+            "Thiếu GOOGLE_CREDS_JSON trên Render Environment"
+        )
+
+    info = json.loads(
+        os.environ["GOOGLE_CREDS_JSON"]
+    )
+
+    with open("service_account.json", "w", encoding="utf-8") as f:
+        json.dump(info, f)
+
+    service_account = info["client_email"]
+    project_id = info["project_id"]
+
+    credentials = ee.ServiceAccountCredentials(
+        service_account,
+        "service_account.json"
+    )
+
+    ee.Initialize(
+        credentials,
+        project=project_id
+    )
 
     provinces_fc = (
-        ee.FeatureCollection("FAO/GAUL/2015/level1")
-        .filter(ee.Filter.eq("ADM0_NAME", "Viet Nam"))
+        ee.FeatureCollection(
+            "FAO/GAUL/2015/level1"
+        )
+        .filter(
+            ee.Filter.eq(
+                "ADM0_NAME",
+                "Viet Nam"
+            )
+        )
     )
+
+    gsw = ee.Image(
+        "JRC/GSW1_4/GlobalSurfaceWater"
+    )
+
+    permanent_water = (
+        gsw
+        .select("occurrence")
+        .gt(80)
+    )
+
     gee_ready = True
 
 
