@@ -1,26 +1,28 @@
 import os
-print(os.name)
 import sys
-import ee
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import json
 import sqlite3
-import pandas as pd
-from sklearn.linear_model import LinearRegression
 import io
 
-
+import ee
 import numpy as np
+import pandas as pd
 
-
-
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from sklearn.linear_model import LinearRegression
 from google import genai
 
 
+# =========================
+# GEMINI AI
+# =========================
 client = genai.Client(
-    api_key="AIzaSyBHx5WItaQcOJqxjY0ipHXGnd7OMDnictM"
+    api_key=os.environ.get("GEMINI_API_KEY")
 )
 
+# =========================
+# FLASK APP
 # =========================
 app = Flask(__name__)
 
@@ -29,11 +31,14 @@ CORS(app, resources={
         "origins": "*"
     }
 })
-# SAVE DATA
+
+
 # =========================
 # INIT DATABASE
 # =========================
 def init_db():
+
+    os.makedirs("data", exist_ok=True)
 
     conn = sqlite3.connect(
         'data/coastal.db'
@@ -66,7 +71,8 @@ def init_db():
     conn.commit()
 
     conn.close()
-# =========================
+
+
 # =========================
 # SAVE DATA
 # =========================
@@ -80,6 +86,8 @@ def save_data(
     accretion
 
 ):
+
+    os.makedirs("data", exist_ok=True)
 
     conn = sqlite3.connect(
         'data/coastal.db'
@@ -102,7 +110,7 @@ def save_data(
 
     VALUES(?,?,?,?,?,?)
 
-    ''',(
+    ''', (
 
         province,
         year,
@@ -116,87 +124,78 @@ def save_data(
     conn.commit()
 
     conn.close()
+
+
+# =========================
 # INIT GEE
 # =========================
-
-# import json
-
-# service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
-
-# if os.environ.get("GOOGLE_CREDS_JSON"):
-#     info = json.loads(os.environ["GOOGLE_CREDS_JSON"])
-#     cred_path = "/tmp/service_account.json"
-#     with open(cred_path, "w") as f:
-#         json.dump(info, f)
-# else:
-#     cred_path = "service_account.json"
-
-# credentials = ee.ServiceAccountCredentials(
-#     service_account,
-#     cred_path
-# )
-
-# ee.Initialize(credentials)
-
-import json
-import os
-import ee
-from google.oauth2 import service_account
-
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
 if os.environ.get("GOOGLE_CREDS_JSON"):
-    info = json.loads(os.environ["GOOGLE_CREDS_JSON"])
-    credentials = ee.ServiceAccountCredentials(service_account, info)
-else:
-    credentials = ee.ServiceAccountCredentials(
-        service_account,
-        "service_account.json"
+
+    info = json.loads(
+        os.environ["GOOGLE_CREDS_JSON"]
     )
 
+    with open("service_account.json", "w") as f:
+        json.dump(info, f)
+
+credentials = ee.ServiceAccountCredentials(
+    service_account,
+    "service_account.json"
+)
+
 ee.Initialize(credentials)
+
+
+# =========================
+# INIT DB WHEN START
+# =========================
+init_db()
+
 
 # =========================
 # DATA
 # =========================
 coastal_data = [
 
-    {"label":"An Giang", "search":["Kien Giang","An Giang"]},
-    {"label":"Bac Ninh", "search":["Bac Giang","Bac Ninh"]},
-    {"label":"Ca Mau", "search":["Bac Lieu","Ca Mau"]},
-    {"label":"Cao Bang", "search":["Cao Bang"]},
-    {"label":"Dak Lak", "search":["Phu Yen","Dak Lak"]},
-    {"label":"Dien Bien", "search":["Dien Bien"]},
-    {"label":"Dong Nai", "search":["Binh Phuoc","Dong Nai"]},
-    {"label":"Dong Thap", "search":["Tien Giang","Dong Thap"]},
-    {"label":"Gia Lai", "search":["Gia Lai","Binh Dinh"]},
-    {"label":"Ha Tinh", "search":["Ha Tinh"]},
-    {"label":"Hung Yen", "search":["Thai Binh","Hung Yen"]},
-    {"label":"Khanh Hoa", "search":["Khanh Hoa","Ninh Thuan"]},
-    {"label":"Lai Chau", "search":["Lai Chau"]},
-    {"label":"Lam Dong", "search":["Dak Nong","Lam Dong","Binh Thuan"]},
-    {"label":"Lang Son", "search":["Lang Son"]},
-    {"label":"Lao Cai", "search":["Lao Cai","Yen Bai"]},
-    {"label":"Nghe An", "search":["Nghe An"]},
-    {"label":"Ninh Binh", "search":["Ha Nam","Ninh Binh","Nam Dinh"]},
-    {"label":"Phu Tho", "search":["Hoa Binh","Vinh Phuc","Phu Tho"]},
-    {"label":"Quang Ngai", "search":["Quang Ngai","Kon Tum"]},
-    {"label":"Quang Ninh", "search":["Quang Ninh"]},
-    {"label":"Quang Tri", "search":["Quang Binh","Quang Tri"]},
-    {"label":"Son La", "search":["Son La"]},
-    {"label":"Tay Ninh", "search":["Long An","Tay Ninh"]},
-    {"label":"Thai Nguyen", "search":["Bac Kan","Thai Nguyen"]},
-    {"label":"Thanh Hoa", "search":["Thanh Hoa"]},
-    {"label":"Can Tho", "search":["Soc Trang","Hau Giang","Can Tho"]},
-    {"label":"Da Nang", "search":["Quang Nam","Da Nang"]},
-    {"label":"Ha Noi", "search":["Ha Noi"]},
-    {"label":"Hai Phong", "search":["Hai Duong","Hai Phong"]},
-    {"label":"TP Ho Chi Minh", "search":["Binh Duong","Ho Chi Minh","Ba Ria"]},
-    {"label":"Hue", "search":["Thua Thien Hue"]},
-    {"label":"Tuyen Quang", "search":["Ha Giang","Tuyen Quang"]},
-    {"label":"Vinh Long", "search":["Ben Tre","Vinh Long","Tra Vinh"]}
+    {"label": "An Giang", "search": ["Kien Giang", "An Giang"]},
+    {"label": "Bac Ninh", "search": ["Bac Giang", "Bac Ninh"]},
+    {"label": "Ca Mau", "search": ["Bac Lieu", "Ca Mau"]},
+    {"label": "Cao Bang", "search": ["Cao Bang"]},
+    {"label": "Dak Lak", "search": ["Phu Yen", "Dak Lak"]},
+    {"label": "Dien Bien", "search": ["Dien Bien"]},
+    {"label": "Dong Nai", "search": ["Binh Phuoc", "Dong Nai"]},
+    {"label": "Dong Thap", "search": ["Tien Giang", "Dong Thap"]},
+    {"label": "Gia Lai", "search": ["Gia Lai", "Binh Dinh"]},
+    {"label": "Ha Tinh", "search": ["Ha Tinh"]},
+    {"label": "Hung Yen", "search": ["Thai Binh", "Hung Yen"]},
+    {"label": "Khanh Hoa", "search": ["Khanh Hoa", "Ninh Thuan"]},
+    {"label": "Lai Chau", "search": ["Lai Chau"]},
+    {"label": "Lam Dong", "search": ["Dak Nong", "Lam Dong", "Binh Thuan"]},
+    {"label": "Lang Son", "search": ["Lang Son"]},
+    {"label": "Lao Cai", "search": ["Lao Cai", "Yen Bai"]},
+    {"label": "Nghe An", "search": ["Nghe An"]},
+    {"label": "Ninh Binh", "search": ["Ha Nam", "Ninh Binh", "Nam Dinh"]},
+    {"label": "Phu Tho", "search": ["Hoa Binh", "Vinh Phuc", "Phu Tho"]},
+    {"label": "Quang Ngai", "search": ["Quang Ngai", "Kon Tum"]},
+    {"label": "Quang Ninh", "search": ["Quang Ninh"]},
+    {"label": "Quang Tri", "search": ["Quang Binh", "Quang Tri"]},
+    {"label": "Son La", "search": ["Son La"]},
+    {"label": "Tay Ninh", "search": ["Long An", "Tay Ninh"]},
+    {"label": "Thai Nguyen", "search": ["Bac Kan", "Thai Nguyen"]},
+    {"label": "Thanh Hoa", "search": ["Thanh Hoa"]},
+    {"label": "Can Tho", "search": ["Soc Trang", "Hau Giang", "Can Tho"]},
+    {"label": "Da Nang", "search": ["Quang Nam", "Da Nang"]},
+    {"label": "Ha Noi", "search": ["Ha Noi"]},
+    {"label": "Hai Phong", "search": ["Hai Duong", "Hai Phong"]},
+    {"label": "TP Ho Chi Minh", "search": ["Binh Duong", "Ho Chi Minh", "Ba Ria"]},
+    {"label": "Hue", "search": ["Thua Thien Hue"]},
+    {"label": "Tuyen Quang", "search": ["Ha Giang", "Tuyen Quang"]},
+    {"label": "Vinh Long", "search": ["Ben Tre", "Vinh Long", "Tra Vinh"]}
 
 ]
+
 
 # =========================
 # NON COASTAL
@@ -217,6 +216,7 @@ non_coastal = [
     'Ha Noi'
 ]
 
+
 # =========================
 # VIETNAM PROVINCES
 # =========================
@@ -232,6 +232,7 @@ provinces_fc = (
     )
 )
 
+
 # =========================
 # GLOBAL WATER
 # =========================
@@ -244,6 +245,7 @@ permanent_water = (
     .select('occurrence')
     .gt(80)
 )
+
 
 # =========================
 # CLOUD MASK
@@ -280,9 +282,7 @@ def mask_l8_sr(image):
         )
     )
 
-# =========================
-# GET IMAGE
-# =========================
+
 # =========================
 # GET IMAGE - FAST
 # =========================
@@ -307,7 +307,6 @@ def get_analysis(offshore_zone, year):
         .limit(30)
     )
 
-    # FAST hơn median()
     img = (
         dataset
         .reduce(
@@ -316,52 +315,34 @@ def get_analysis(offshore_zone, year):
         .clip(offshore_zone)
     )
 
-    # =========================
-    # BANDS
-    # =========================
     green = img.select('SR_B3_p25')
-    nir   = img.select('SR_B5_p25')
-    swir  = img.select('SR_B6_p25')
+    nir = img.select('SR_B5_p25')
+    swir = img.select('SR_B6_p25')
 
-    # =========================
-    # NDWI
-    # =========================
     ndwi = (
         green.subtract(nir)
         .divide(green.add(nir))
         .rename('NDWI')
     )
 
-    # =========================
-    # MNDWI
-    # =========================
     mndwi = (
         green.subtract(swir)
         .divide(green.add(swir))
         .rename('MNDWI')
     )
 
-    # =========================
-    # WATER
-    # =========================
     water = mndwi.gt(0.12)
 
     water = water.And(
         permanent_water
     )
 
-    # =========================
-    # FAST SMOOTH
-    # =========================
     water = (
         water
         .focal_max(1)
         .focal_min(1)
     )
 
-    # =========================
-    # REMOVE NOISE
-    # =========================
     water = water.updateMask(
         water.connectedPixelCount(
             100,
@@ -369,9 +350,6 @@ def get_analysis(offshore_zone, year):
         ).gte(100)
     )
 
-    # =========================
-    # EDGE
-    # =========================
     edge = (
         ee.Algorithms.CannyEdgeDetector(
             image=water,
@@ -381,9 +359,6 @@ def get_analysis(offshore_zone, year):
         .selfMask()
     )
 
-    # =========================
-    # STATS
-    # =========================
     stats = (
         ndwi.addBands(mndwi)
         .reduceRegion(
@@ -409,9 +384,8 @@ def get_analysis(offshore_zone, year):
 
         'vals': stats
     }
-# =========================
-# AREA
-# =========================
+
+
 # =========================
 # FAST AREA
 # =========================
@@ -448,8 +422,9 @@ def calculate_area(mask, band_name, geometry):
 
     return 0
 
+
 # =========================
-# API
+# API GEE
 # =========================
 @app.route('/gee')
 def run_analysis():
@@ -462,9 +437,12 @@ def run_analysis():
 
         y2 = request.args.get('y2')
 
-        # =========================
-        # CHECK NON COASTAL
-        # =========================
+        if not province or not y1 or not y2:
+
+            return jsonify({
+                "error": "Thiếu province, y1 hoặc y2"
+            }), 400
+
         if province in non_coastal:
 
             return jsonify({
@@ -481,9 +459,6 @@ def run_analysis():
             if d['label'] == province
         )
 
-        # =========================
-        # AOI
-        # =========================
         region = provinces_fc.filter(
 
             ee.Filter.inList(
@@ -498,9 +473,6 @@ def run_analysis():
             .dissolve()
         )
 
-        # =========================
-        # OFFSHORE
-        # =========================
         coastal_buffer = aoi.buffer(1000)
 
         offshore_zone = coastal_buffer.difference(
@@ -513,9 +485,6 @@ def run_analysis():
             1
         )
 
-        # =========================
-        # ANALYSIS
-        # =========================
         r1 = get_analysis(
             offshore_zone,
             y1
@@ -526,9 +495,6 @@ def run_analysis():
             y2
         )
 
-        # =========================
-        # EROSION
-        # =========================
         erosion = (
             r1['water']
             .And(
@@ -542,9 +508,6 @@ def run_analysis():
             )
         )
 
-        # =========================
-        # ACCRETION
-        # =========================
         accretion = (
             r2['water']
             .And(
@@ -558,190 +521,183 @@ def run_analysis():
             )
         )
 
-        # =========================
-        # SAVE DATA
+        erosion_ha = calculate_area(
+            erosion,
+            'erosion',
+            offshore_zone
+        )
+
+        accretion_ha = calculate_area(
+            accretion,
+            'accretion',
+            offshore_zone
+        )
+
         save_data(
 
-    province,
+            province,
 
-    int(y1),
+            int(y1),
 
-    r1['vals']['NDWI'],
+            r1['vals'].get('NDWI', 0),
 
-    r1['vals']['MNDWI'],
+            r1['vals'].get('MNDWI', 0),
 
-    calculate_area(
-        erosion,
-        'erosion',
-        offshore_zone
-    ),
+            erosion_ha,
 
-    calculate_area(
-        accretion,
-        'accretion',
-        offshore_zone
-    )
-)
-        # RESULT
-        # =========================
+            accretion_ha
+        )
+
         result = {
 
-    "layers": {
+            "layers": {
 
-        "boundary":
+                "boundary":
 
-        ee.Image()
-        .byte()
-        .paint(
-            featureCollection=
-            ee.FeatureCollection([
-                ee.Feature(aoi)
-            ]),
-            color=1,
-            width=3
-        )
-        .getMapId({
-            'palette': ['yellow']
-        })['tile_fetcher'].url_format,
+                ee.Image()
+                .byte()
+                .paint(
+                    featureCollection=
+                    ee.FeatureCollection([
+                        ee.Feature(aoi)
+                    ]),
+                    color=1,
+                    width=3
+                )
+                .getMapId({
+                    'palette': ['yellow']
+                })['tile_fetcher'].url_format,
 
-        "shoreline1":
+                "shoreline1":
 
-        r1['edge']
-        .getMapId({
+                r1['edge']
+                .getMapId({
 
-            'palette': ['#ff00ff']
+                    'palette': ['#ff00ff']
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "shoreline2":
+                "shoreline2":
 
-        r2['edge']
-        .getMapId({
+                r2['edge']
+                .getMapId({
 
-            'palette': ['#00ffff']
+                    'palette': ['#00ffff']
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "erosion":
+                "erosion":
 
-        erosion
-        .getMapId({
+                erosion
+                .getMapId({
 
-            'palette': ['red']
+                    'palette': ['red']
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "accretion":
+                "accretion":
 
-        accretion
-        .getMapId({
+                accretion
+                .getMapId({
 
-            'palette': ['lime']
+                    'palette': ['lime']
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "ndwi1":
+                "ndwi1":
 
-        r1['ndwi']
-        .getMapId({
+                r1['ndwi']
+                .getMapId({
 
-            'min': -1,
-            'max': 1,
+                    'min': -1,
+                    'max': 1,
 
-            'palette': [
-                'white',
-                'blue'
-            ]
+                    'palette': [
+                        'white',
+                        'blue'
+                    ]
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "ndwi2":
+                "ndwi2":
 
-        r2['ndwi']
-        .getMapId({
+                r2['ndwi']
+                .getMapId({
 
-            'min': -1,
-            'max': 1,
+                    'min': -1,
+                    'max': 1,
 
-            'palette': [
-                'white',
-                'blue'
-            ]
+                    'palette': [
+                        'white',
+                        'blue'
+                    ]
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "mndwi1":
+                "mndwi1":
 
-        r1['mndwi']
-        .getMapId({
+                r1['mndwi']
+                .getMapId({
 
-            'min': -1,
-            'max': 1,
+                    'min': -1,
+                    'max': 1,
 
-            'palette': [
-                'white',
-                'green'
-            ]
+                    'palette': [
+                        'white',
+                        'green'
+                    ]
 
-        })['tile_fetcher'].url_format,
+                })['tile_fetcher'].url_format,
 
-        "mndwi2":
+                "mndwi2":
 
-        r2['mndwi']
-        .getMapId({
+                r2['mndwi']
+                .getMapId({
 
-            'min': -1,
-            'max': 1,
+                    'min': -1,
+                    'max': 1,
 
-            'palette': [
-                'white',
-                'green'
-            ]
+                    'palette': [
+                        'white',
+                        'green'
+                    ]
 
-        })['tile_fetcher'].url_format
-    },
+                })['tile_fetcher'].url_format
+            },
 
-    "stats": {
+            "stats": {
 
-        "year1": {
+                "year1": {
 
-            "NDWI": float(r1['vals'].get('NDWI', 0)),
-            "MNDWI": float(r1['vals'].get('MNDWI', 0))
+                    "NDWI": float(r1['vals'].get('NDWI', 0)),
+                    "MNDWI": float(r1['vals'].get('MNDWI', 0))
 
-        },
+                },
 
-        "year2": {
+                "year2": {
 
-            "NDWI": float(r2['vals'].get('NDWI', 0)),
-            "MNDWI": float(r2['vals'].get('MNDWI', 0))
+                    "NDWI": float(r2['vals'].get('NDWI', 0)),
+                    "MNDWI": float(r2['vals'].get('MNDWI', 0))
 
-        },
+                },
 
-        "erosion_ha":
+                "erosion_ha":
 
-        float(
-            calculate_area(
-                erosion,
-                'erosion',
-                offshore_zone
-            )
-        ),
+                float(
+                    erosion_ha
+                ),
 
-        "accretion_ha":
+                "accretion_ha":
 
-        float(
-            calculate_area(
-                accretion,
-                'accretion',
-                offshore_zone
-            )
-        )
-    },
+                float(
+                    accretion_ha
+                )
+            },
 
-    "bounds":
+            "bounds":
 
-    aoi.bounds().getInfo()['coordinates'][0]
-}
+            aoi.bounds().getInfo()['coordinates'][0]
+        }
 
         return jsonify(result)
 
@@ -753,8 +709,6 @@ def run_analysis():
 
         }), 500
 
-# =========================
-# =========================
 
 # =========================
 # FORECAST AI
@@ -764,20 +718,28 @@ def forecast():
 
     province = request.args.get('province')
 
+    if not province:
+
+        return jsonify({
+            "error": "Thiếu province"
+        }), 400
+
     conn = sqlite3.connect(
         'data/coastal.db'
     )
 
     df = pd.read_sql_query(
 
-        f"""
+        """
         SELECT *
         FROM coastal_analysis
-        WHERE province='{province}'
+        WHERE province = ?
         ORDER BY year
         """,
 
-        conn
+        conn,
+
+        params=(province,)
     )
 
     conn.close()
@@ -785,28 +747,22 @@ def forecast():
     if len(df) < 2:
 
         return jsonify({
-            "error":"Không đủ dữ liệu"
+            "error": "Không đủ dữ liệu"
         })
 
-    # =========================
-    # TRAIN AI
-    # =========================
-    X = np.array(df['year']).reshape(-1,1)
+    X = np.array(df['year']).reshape(-1, 1)
 
     y = np.array(df['erosion'])
 
     model = LinearRegression()
 
-    model.fit(X,y)
+    model.fit(X, y)
 
-    # =========================
-    # PREDICT 5 YEARS
-    # =========================
     last_year = int(df['year'].max())
 
     result = []
 
-    for i in range(1,6):
+    for i in range(1, 6):
 
         year = last_year + i
 
@@ -816,41 +772,68 @@ def forecast():
 
             "year": year,
 
-            "prediction": round(float(pred),2)
+            "prediction": round(float(pred), 2)
 
         })
 
     return jsonify(result)
-# =========================
-# =========================
-# CHAT AI GIS
-# =========================
+
+
 # =========================
 # CHAT AI GIS
 # =========================
 @app.route('/chat_ai', methods=['POST'])
 def chat_ai():
-    data = request.get_json()
 
-    prompt = f"""
-Tỉnh: {data['province']}
-Dữ liệu: {data['stats']}
-Câu hỏi: {data['question']}
+    try:
+
+        data = request.get_json()
+
+        if not data:
+
+            return jsonify({
+                "error": "Không có dữ liệu gửi lên"
+            }), 400
+
+        if not os.environ.get("GEMINI_API_KEY"):
+
+            return jsonify({
+                "error": "Thiếu GEMINI_API_KEY trong Render Environment"
+            }), 500
+
+        prompt = f"""
+Tỉnh: {data.get('province')}
+Dữ liệu: {data.get('stats')}
+Câu hỏi: {data.get('question')}
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    answer = getattr(response, "text", None)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
 
-    if not answer:
-        return jsonify({"error": "AI không phản hồi"}), 500 
+        answer = getattr(response, "text", None)
 
-    return jsonify({
-        "answer": answer
-    })
-#=========
+        if not answer:
+
+            return jsonify({
+                "error": "AI không phản hồi"
+            }), 500
+
+        return jsonify({
+            "answer": answer
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# =========================
+# RUN LOCAL
+# =========================
 if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 5000))
