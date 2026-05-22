@@ -27,9 +27,10 @@ client = genai.Client(
 # =========================
 app = Flask(__name__)
 
-# Tự động tạo thư mục 'data' nếu chưa có để tránh lỗi SQLite trên Render
+# Tự động tạo thư mục 'data' và database SQLite ngay khi khởi tạo App (Bất kể chạy local hay Gunicorn)
 if not os.path.exists('data'):
     os.makedirs('data')
+init_db()  # <--- ĐƯA LỆNH NÀY LÊN ĐÂY
 
 CORS(app, resources={
     r"/*": {
@@ -127,21 +128,36 @@ def save_data(
 # =========================
 # INIT GEE
 # =========================
+# INIT GEE
+# =========================
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 cred_path = 'service_account.json'
 
-# 1. Xử lý ghi file cấu hình từ biến môi trường (Nếu có)
-if os.environ.get('GOOGLE_CREDS_JSON'):
-    with open(cred_path, 'w') as f:
-        json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
+env_creds = os.environ.get('GOOGLE_CREDS_JSON')
+
+if env_creds:
+    try:
+        # Làm sạch chuỗi trước khi giải mã để tránh lỗi ký tự lạ hoặc khoảng trắng
+        clean_creds = env_creds.strip()
+        cred_data = json.loads(clean_creds)
+        
+        with open(cred_path, 'w') as f:
+            json.dump(cred_data, f)
+        print("Successfully generated service_account.json from Render Environment.")
+    except Exception as e:
+        print(f"Critical Error parsing GOOGLE_CREDS_JSON env: {str(e)}")
 else:
     print("Running in local mode / No GOOGLE_CREDS_JSON env detected. Using local service_account.json file.")
 
-# 2. ĐƯA RA NGOÀI KHỐI IF/ELSE: Khởi tạo biến credentials (Bắt buộc phải chạy)
-credentials = ee.ServiceAccountCredentials(
-    service_account,
-    cred_path
-)
+# Đảm bảo biến credentials LUÔN ĐƯỢC ĐỊNH NGHĨA bất kể cấu hình env đúng hay sai
+try:
+    credentials = ee.ServiceAccountCredentials(service_account, cred_path)
+    ee.Initialize(credentials)
+    print("Google Earth Engine initialized successfully!")
+except Exception as e:
+    print(f"GEE Initialization failed: {str(e)}")
+    # Tạo biến fallback để Gunicorn không bị sập sảng hồn bằng lỗi NameError
+    credentials = None
 
 # 3. Kích hoạt kết nối đến Google Earth Engine
 ee.Initialize(credentials)
