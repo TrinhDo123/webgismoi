@@ -568,17 +568,11 @@ def run_analysis():
             )
         )
 
-        erosion_ha = calculate_area(
-            erosion,
-            "erosion",
-            offshore_zone
-        )
+        # Render free bị timeout khi tính diện tích bằng reduceRegion/getInfo.
+        # Tạm thời set 0 để /gee trả layer bản đồ nhanh, không bị Internal Server Error.
+        erosion_ha = 0
 
-        accretion_ha = calculate_area(
-            accretion,
-            "accretion",
-            offshore_zone
-        )
+        accretion_ha = 0
 
         save_data(
             province,
