@@ -4,18 +4,19 @@ const API_URL = `${BASE_URL}/gee`;
 // Chỉ giữ các tỉnh/vùng có bờ biển thật.
 // Không cho chọn tỉnh nội địa như An Giang, Bắc Ninh, Điện Biên...
 const provinces = [
-    "Quang Ninh",
-    "Hai Phong",
-    "Thanh Hoa",
-    "Nghe An",
+    "Ca Mau",
     "Ha Tinh",
-    "Quang Tri",
-    "Hue",
-    "Da Nang",
-    "Quang Ngai",
     "Khanh Hoa",
+    "Nghe An",
+    "Quang Ngai",
+    "Quang Ninh",
+    "Quang Tri",
+    "Thanh Hoa",
+    "Da Nang",
+    "Hai Phong",
     "TP Ho Chi Minh",
-    "Ca Mau"
+    "Hue",
+    "Vinh Long"
 ];
 
 const provinceSelect = document.getElementById("province");
@@ -257,9 +258,8 @@ async function startAnalysis() {
             if (
                 [
                     "boundary",
-                    "coast_strip",
-                    "ndwi1",
-                    "mndwi1"
+                    "shoreline1",
+                    "shoreline2"
                 ].includes(k)
             ) {
                 layers[k].addTo(map);

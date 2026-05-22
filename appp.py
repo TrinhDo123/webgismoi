@@ -273,19 +273,22 @@ init_db()
 # DATA - CHỈ GIỮ TỈNH/VÙNG GIÁP BIỂN THẬT
 # Không map tỉnh không giáp biển sang tỉnh khác.
 # =========================
-coastal_data = [
-    {"label": "Ca Mau", "search": ["Ca Mau"]},
+ccoastal_data = [
+
+    {"label": "Ca Mau", "search": ["Bac Lieu", "Ca Mau"]},
     {"label": "Ha Tinh", "search": ["Ha Tinh"]},
-    {"label": "Khanh Hoa", "search": ["Khanh Hoa"]},
+    {"label": "Khanh Hoa", "search": ["Khanh Hoa", "Ninh Thuan"]},
     {"label": "Nghe An", "search": ["Nghe An"]},
-    {"label": "Quang Ngai", "search": ["Quang Ngai"]},
+    {"label": "Quang Ngai", "search": ["Quang Ngai", "Kon Tum"]},
     {"label": "Quang Ninh", "search": ["Quang Ninh"]},
-    {"label": "Quang Tri", "search": ["Quang Tri"]},
+    {"label": "Quang Tri", "search": ["Quang Binh", "Quang Tri"]},
     {"label": "Thanh Hoa", "search": ["Thanh Hoa"]},
-    {"label": "Da Nang", "search": ["Da Nang"]},
-    {"label": "Hai Phong", "search": ["Hai Phong"]},
-    {"label": "TP Ho Chi Minh", "search": ["Ho Chi Minh"]},
-    {"label": "Hue", "search": ["Thua Thien Hue"]}
+    {"label": "Da Nang", "search": ["Quang Nam", "Da Nang"]},
+    {"label": "Hai Phong", "search": ["Hai Duong", "Hai Phong"]},
+    {"label": "TP Ho Chi Minh", "search": ["Binh Duong", "Ho Chi Minh", "Ba Ria"]},
+    {"label": "Hue", "search": ["Thua Thien Hue"]},
+    {"label": "Vinh Long", "search": ["Ben Tre", "Vinh Long", "Tra Vinh"]}
+
 ]
 
 non_coastal = []
@@ -306,19 +309,13 @@ def get_selected(province):
 
     if not selected:
         raise ValueError(
-            f"Tỉnh {province} không giáp biển hoặc chưa được cấu hình vùng bờ biển thật"
+            f"Tỉnh {province} không giáp biển hoặc chưa được cấu hình vùng bờ biển"
         )
 
     return selected
 
 
 def get_region_and_zone(province):
-    """
-    Trả về AOI đất liền và vùng tìm kiếm ven biển.
-    Không tạo buffer quanh toàn bộ ranh giới tỉnh để tránh lấy nhầm
-    đường biên trong đất liền. Việc lọc đúng bờ biển được làm bằng
-    raster ocean_mask trong get_coastal_masks().
-    """
 
     selected = get_selected(province)
 
@@ -342,12 +339,18 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    # Chỉ là vùng tìm kiếm ảnh; không dùng làm đường bờ.
-    # Dải 8 km đủ để lấy cả phần đất ven bờ và nước biển ngoài khơi.
-    search_zone = aoi.buffer(8000)
+    coastal_buffer = aoi.buffer(2000)
 
-    return aoi, search_zone
+    offshore_zone = (
+        coastal_buffer
+        .difference(aoi, 1)
+        .intersection(
+            aoi.bounds(),
+            1
+        )
+    )
 
+    return aoi, offshore_zone
 
 def get_coastal_masks(aoi, search_zone):
     """
@@ -498,17 +501,13 @@ def mask_l8_sr(image):
 # =========================
 # GET ANALYSIS - OPTIMIZED FOR RENDER
 # =========================
-def get_analysis(search_zone, aoi, year, include_heavy=False):
-
-    masks = get_coastal_masks(aoi, search_zone)
-
-    # Dùng Landsat 8 + 9 SR để có dữ liệu ổn định giai đoạn 2015-2026.
-    l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
-    l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+def get_analysis(offshore_zone, year, include_heavy=False):
 
     dataset = (
-        l8.merge(l9)
-        .filterBounds(search_zone)
+        ee.ImageCollection(
+            "LANDSAT/LC08/C02/T1_TOA"
+        )
+        .filterBounds(offshore_zone)
         .filterDate(
             f"{year}-01-01",
             f"{year}-12-31"
@@ -516,77 +515,64 @@ def get_analysis(search_zone, aoi, year, include_heavy=False):
         .filter(
             ee.Filter.lt(
                 "CLOUD_COVER",
-                50
+                25
             )
         )
-        .sort("CLOUD_COVER")
-        .map(mask_l8_sr)
-        .limit(8)
     )
 
     img = (
         dataset
         .median()
-        .clip(search_zone)
+        .clip(offshore_zone)
     )
 
-    green = img.select("SR_B3")
-    nir = img.select("SR_B5")
-    swir = img.select("SR_B6")
-
-    ndwi_raw = (
-        green.subtract(nir)
-        .divide(green.add(nir))
+    ndwi = (
+        img.normalizedDifference([
+            "B3",
+            "B5"
+        ])
         .rename("NDWI")
     )
 
-    mndwi_raw = (
-        green.subtract(swir)
-        .divide(green.add(swir))
+    mndwi = (
+        img.normalizedDifference([
+            "B3",
+            "B6"
+        ])
         .rename("MNDWI")
     )
 
-    # Chỉ hiển thị NDWI/MNDWI trong dải ven biển thật.
-    ndwi = ndwi_raw.updateMask(
-        masks["coast_strip"]
-    )
+    water = mndwi.gt(0.15)
 
-    mndwi = mndwi_raw.updateMask(
-        masks["coast_strip"]
-    )
-
-    # Water mask chỉ lấy nước sát biển.
-    # Không dùng toàn bộ permanent_water vì nó giữ cả sông/hồ/ao trong đất liền.
     water = (
-        mndwi_raw
-        .gt(0.08)
-        .updateMask(masks["coast_strip"])
-        .focal_max(radius=60, units="meters")
-        .focal_min(radius=60, units="meters")
+        water
+        .focal_max(1)
+        .focal_min(1)
+        .focal_mode(2)
     )
 
     water = water.updateMask(
         water.connectedPixelCount(
-            80,
+            300,
             True
-        ).gte(80)
-    ).rename("water")
+        ).gte(300)
+    )
 
-    # Đường bờ là biên của nước, nhưng bị mask trong lõi tiếp xúc đất-biển
-    # để không vẽ đường trong nội địa.
+    water = water.clip(
+        offshore_zone.buffer(1000)
+    )
+
+    edge = ee.Algorithms.CannyEdgeDetector(
+        image=water,
+        threshold=0.1,
+        sigma=2
+    )
+
     edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=water,
-            threshold=0.1,
-            sigma=1.5
-        )
-        .updateMask(
-            masks["coast_core"]
-            .focal_max(radius=800, units="meters")
-        )
-        .focal_max(radius=30, units="meters")
+        edge
+        .focal_max(1)
+        .focal_mode(1)
         .selfMask()
-        .rename("shoreline")
     )
 
     vals = {
@@ -595,12 +581,13 @@ def get_analysis(search_zone, aoi, year, include_heavy=False):
     }
 
     try:
+
         stats = (
             ndwi.addBands(mndwi)
             .reduceRegion(
                 reducer=ee.Reducer.mean(),
-                geometry=search_zone,
-                scale=500,
+                geometry=offshore_zone,
+                scale=120,
                 bestEffort=True,
                 tileScale=8,
                 maxPixels=1e8
@@ -612,18 +599,16 @@ def get_analysis(search_zone, aoi, year, include_heavy=False):
             vals = stats
 
     except Exception as e:
+
         print("STATS ERROR:", e)
 
     return {
         "ndwi": ndwi,
         "mndwi": mndwi,
-        "water": water,
-        "edge": edge,
-        "coast_boundary": masks["coast_boundary"],
-        "coast_strip": masks["coast_strip"],
+        "water": water.rename("water"),
+        "edge": edge.rename("shoreline"),
         "vals": vals
     }
-
 
 # =========================
 # CALCULATE AREA - SAFE
@@ -754,9 +739,17 @@ def run_analysis():
 
             "layers": {
 
-                "boundary":
+               "boundary":
                 get_map_url(
-                    r1["coast_boundary"],
+                    ee.Image()
+                    .byte()
+                    .paint(
+                        featureCollection=ee.FeatureCollection([
+                            ee.Feature(aoi)
+                        ]),
+                        color=1,
+                        width=2
+                    ),
                     {
                         "palette": ["yellow"]
                     }
