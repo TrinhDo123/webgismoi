@@ -1,5 +1,4 @@
 const BASE_URL = "https://webgismoi.onrender.com";
-
 const API_URL = `${BASE_URL}/gee`;
 
 const provinces = [
@@ -76,6 +75,13 @@ let resData = null;
 let chart1 = null;
 let chart2 = null;
 
+const heavyLayers = [
+    "shoreline1",
+    "shoreline2",
+    "erosion",
+    "accretion"
+];
+
 function buildLayerUI() {
 
     const y1 = y1Select.value;
@@ -111,18 +117,97 @@ function buildLayerUI() {
     });
 }
 
-function toggleLayer(id) {
+async function toggleLayer(id) {
 
-    if (!layers[id]) return;
+    const chk = document.getElementById("chk_" + id);
 
-    const checked = document.getElementById(
-        "chk_" + id
-    ).checked;
+    if (!chk) return;
 
-    if (checked) {
+    const checked = chk.checked;
+
+    if (!checked) {
+        if (layers[id] && map.hasLayer(layers[id])) {
+            map.removeLayer(layers[id]);
+        }
+
+        return;
+    }
+
+    if (layers[id]) {
         layers[id].addTo(map);
-    } else {
-        map.removeLayer(layers[id]);
+        return;
+    }
+
+    if (heavyLayers.includes(id)) {
+        await loadHeavyLayer(id);
+        return;
+    }
+}
+
+async function loadHeavyLayer(layerId) {
+
+    try {
+
+        const chk = document.getElementById("chk_" + layerId);
+
+        if (chk) {
+            chk.disabled = true;
+        }
+
+        const province = encodeURIComponent(
+            provinceSelect.value
+        );
+
+        const y1 = y1Select.value;
+        const y2 = y2Select.value;
+
+        const heavyUrl =
+            `${BASE_URL}/gee_heavy?province=${province}&y1=${y1}&y2=${y2}&layer=${layerId}`;
+
+        console.log("HEAVY LAYER URL:", heavyUrl);
+
+        const response = await fetch(heavyUrl);
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.error || "Không tải được lớp nâng cao"
+            );
+        }
+
+        if (!data.layers || !data.layers[layerId]) {
+            throw new Error(
+                "Server không trả về dữ liệu layer"
+            );
+        }
+
+        layers[layerId] = L.tileLayer(
+            data.layers[layerId],
+            {
+                opacity: 0.85
+            }
+        );
+
+        layers[layerId].addTo(map);
+
+        if (chk) {
+            chk.checked = true;
+            chk.disabled = false;
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+        const chk = document.getElementById("chk_" + layerId);
+
+        if (chk) {
+            chk.checked = false;
+            chk.disabled = false;
+        }
+
+        alert(err.message || "Lỗi tải lớp nâng cao");
     }
 }
 
@@ -144,10 +229,9 @@ async function startAnalysis() {
         const y1 = y1Select.value;
         const y2 = y2Select.value;
 
-        const url =
-            `${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
+        const url = `${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
 
-        console.log(url);
+        console.log("API URL:", url);
 
         const response = await fetch(url);
 
@@ -181,15 +265,19 @@ async function startAnalysis() {
             if (
                 [
                     "boundary",
-                    "erosion",
-                    "accretion"
+                    "ndwi1",
+                    "ndwi2",
+                    "mndwi1",
+                    "mndwi2"
                 ].includes(k)
             ) {
                 layers[k].addTo(map);
 
-                document.getElementById(
-                    "chk_" + k
-                ).checked = true;
+                const chk = document.getElementById("chk_" + k);
+
+                if (chk) {
+                    chk.checked = true;
+                }
             }
         }
 
@@ -231,12 +319,12 @@ function updateStats() {
             <br><br>
             NDWI:
             <span class="success">
-                ${s.year1.NDWI.toFixed(4)}
+                ${Number(s.year1.NDWI).toFixed(4)}
             </span>
             <br>
             MNDWI:
             <span class="success">
-                ${s.year1.MNDWI.toFixed(4)}
+                ${Number(s.year1.MNDWI).toFixed(4)}
             </span>
         </div>
 
@@ -245,12 +333,12 @@ function updateStats() {
             <br><br>
             NDWI:
             <span class="success">
-                ${s.year2.NDWI.toFixed(4)}
+                ${Number(s.year2.NDWI).toFixed(4)}
             </span>
             <br>
             MNDWI:
             <span class="success">
-                ${s.year2.MNDWI.toFixed(4)}
+                ${Number(s.year2.MNDWI).toFixed(4)}
             </span>
         </div>
 
@@ -306,13 +394,13 @@ async function loadForecast() {
         const accretion = s.accretion_ha;
 
         const ndwi = (
-            s.year1.NDWI +
-            s.year2.NDWI
+            Number(s.year1.NDWI) +
+            Number(s.year2.NDWI)
         ) / 2;
 
         const mndwi = (
-            s.year1.MNDWI +
-            s.year2.MNDWI
+            Number(s.year1.MNDWI) +
+            Number(s.year2.MNDWI)
         ) / 2;
 
         let erosionText = "";
@@ -326,9 +414,7 @@ async function loadForecast() {
                     xói mòn mạnh hơn bồi tụ
                 </b>.
                 Điều này cho thấy đường bờ biển
-                có nguy cơ bị thu hẹp theo thời gian,
-                đặc biệt dưới tác động của sóng biển,
-                dòng chảy và biến đổi khí hậu.
+                có nguy cơ bị thu hẹp theo thời gian.
             `;
         } else if (accretion > erosion) {
             erosionText = `
@@ -337,8 +423,7 @@ async function loadForecast() {
                     bồi tụ mạnh hơn xói mòn
                 </b>.
                 Điều này phản ánh quá trình tích tụ
-                trầm tích đang diễn ra tương đối tốt,
-                giúp mở rộng bề mặt ven biển.
+                trầm tích đang diễn ra tương đối tốt.
             `;
         } else {
             erosionText = `
@@ -351,40 +436,34 @@ async function loadForecast() {
         if (ndwi < -0.3) {
             ndwiText = `
                 Chỉ số NDWI ở mức thấp,
-                phản ánh khu vực có lượng nước bề mặt ít,
-                môi trường khô hơn và khả năng hiện diện nước thấp.
+                phản ánh khu vực có lượng nước bề mặt ít.
             `;
         } else if (ndwi >= -0.3 && ndwi <= 0.3) {
             ndwiText = `
                 Chỉ số NDWI ở mức trung bình,
-                phản ánh trạng thái chuyển tiếp
-                giữa đất và nước hoặc khu vực ẩm ướt.
+                phản ánh trạng thái chuyển tiếp giữa đất và nước.
             `;
         } else {
             ndwiText = `
                 Chỉ số NDWI cao,
-                cho thấy sự hiện diện mạnh của nước bề mặt,
-                vùng ngập nước hoặc khu vực ven biển chịu tác động thủy văn lớn.
+                cho thấy sự hiện diện mạnh của nước bề mặt.
             `;
         }
 
         if (mndwi < -0.3) {
             mndwiText = `
                 Chỉ số MNDWI thấp,
-                phản ánh khu vực có khả năng chứa nước thấp
-                và bề mặt chủ yếu là đất hoặc thực vật.
+                phản ánh khả năng chứa nước thấp.
             `;
         } else if (mndwi >= -0.3 && mndwi <= 0.3) {
             mndwiText = `
                 Chỉ số MNDWI ở mức trung bình,
-                cho thấy khu vực có sự pha trộn
-                giữa nước và đất ngập ẩm.
+                cho thấy khu vực có sự pha trộn giữa nước và đất ngập ẩm.
             `;
         } else {
             mndwiText = `
                 Chỉ số MNDWI cao,
-                phản ánh khả năng tồn tại nước mặt rõ rệt,
-                đặc biệt tại khu vực ven biển hoặc đầm phá.
+                phản ánh khả năng tồn tại nước mặt rõ rệt.
             `;
         }
 
@@ -474,6 +553,7 @@ async function loadForecast() {
         document.getElementById("ai-report").innerHTML = html;
 
     } catch (err) {
+
         console.log(err);
 
         document.getElementById("ai-report").innerHTML = `
@@ -575,10 +655,10 @@ function renderCharts() {
                 datasets: [{
                     label: "Giá trị",
                     data: [
-                        s.year1.NDWI,
-                        s.year1.MNDWI,
-                        s.year2.NDWI,
-                        s.year2.MNDWI
+                        Number(s.year1.NDWI),
+                        Number(s.year1.MNDWI),
+                        Number(s.year2.NDWI),
+                        Number(s.year2.MNDWI)
                     ]
                 }]
             },
@@ -600,8 +680,8 @@ function renderCharts() {
                 ],
                 datasets: [{
                     data: [
-                        s.erosion_ha,
-                        s.accretion_ha
+                        Number(s.erosion_ha),
+                        Number(s.accretion_ha)
                     ]
                 }]
             },
