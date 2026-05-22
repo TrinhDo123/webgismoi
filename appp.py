@@ -17,9 +17,8 @@ import numpy as np
 from google import genai
 
 
-# Đọc API Key từ biến môi trường của hệ thống
 client = genai.Client(
-    api_key=os.environ.get("GEMINI_API_KEY")
+    api_key="AIzaSyBHx5WItaQcOJqxjY0ipHXGnd7OMDnictM"
 )
 
 # =========================
@@ -122,23 +121,11 @@ def save_data(
 
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
-
-
-import json
-
-# Kiểm tra biến môi trường của Render
-if os.environ.get('GOOGLE_CREDS_JSON'):
-    cred_path = 'service_account.json'
-    with open(cred_path, 'w') as f:
-        json.dump(json.loads(os.environ.get('GOOGLE_CREDS_JSON')), f)
-else:
-    # Nếu chạy trên máy của bạn
-    cred_path = 'service_account.json'
-
 credentials = ee.ServiceAccountCredentials(
     service_account,
-    cred_path
+    r"E:\qlythongttinchuan\service_account.json"
 )
+
 ee.Initialize(credentials)
 
 
