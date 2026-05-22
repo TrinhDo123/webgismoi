@@ -6,26 +6,33 @@ import traceback
 import ee
 import numpy as np
 import pandas as pd
-
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from sklearn.linear_model import LinearRegression
 from google import genai
 
-
+# =========================================================
+# FLASK APP
+# =========================================================
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+
 @app.errorhandler(Exception)
 def handle_global_exception(e):
-
+    """Luôn trả JSON, tránh frontend nhận HTML Internal Server Error."""
     print("GLOBAL ERROR:")
     print(traceback.format_exc())
-
     return jsonify({
         "error": str(e),
         "type": type(e).__name__
     }), 500
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+
+# =========================================================
+# GEMINI AI
+# =========================================================
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 
@@ -45,11 +52,14 @@ def health():
     })
 
 
+# =========================================================
+# DATABASE
+# =========================================================
 def init_db():
     os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect("data/coastal.db")
-    cursor = conn.cursor()
-    cursor.execute("""
+    cur = conn.cursor()
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS coastal_analysis(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         province TEXT,
@@ -67,10 +77,10 @@ def init_db():
 def save_data(province, year, ndwi, mndwi, erosion, accretion):
     os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect("data/coastal.db")
-    cursor = conn.cursor()
-    cursor.execute("""
+    cur = conn.cursor()
+    cur.execute("""
     INSERT INTO coastal_analysis(province, year, ndwi, mndwi, erosion, accretion)
-    VALUES(?,?,?,?,?,?)
+    VALUES (?, ?, ?, ?, ?, ?)
     """, (
         province,
         int(year),
@@ -85,10 +95,12 @@ def save_data(province, year, ndwi, mndwi, erosion, accretion):
 
 init_db()
 
+
+# =========================================================
+# GEE INIT - KHÔNG DÙNG ee.Authenticate() TRÊN RENDER
+# =========================================================
 gee_ready = False
 provinces_fc = None
-tile_cache = {}
-
 
 def init_gee():
     global gee_ready, provinces_fc
@@ -98,101 +110,53 @@ def init_gee():
 
     info = None
 
-    if os.environ.get("GOOGLE_CREDS_JSON"):
+    # Render: dán nguyên JSON service account vào Environment GOOGLE_CREDS_JSON.
+    env_json = os.environ.get("GOOGLE_CREDS_JSON", "").strip()
+    if env_json:
         try:
-            info = json.loads(os.environ["GOOGLE_CREDS_JSON"])
+            info = json.loads(env_json)
         except json.JSONDecodeError as e:
             raise ValueError(
-                "GOOGLE_CREDS_JSON không phải JSON hợp lệ. "
-                "Hãy dán nguyên nội dung file JSON service account vào Render Environment."
+                "GOOGLE_CREDS_JSON không phải JSON hợp lệ. Hãy dán nguyên nội dung file JSON, không thêm dấu nháy ngoài."
             ) from e
-        with open("service_account.json", "w", encoding="utf-8") as f:
-            json.dump(info, f)
     else:
+        # Local: chỉ để test trên máy, tuyệt đối không push file này lên GitHub.
         if not os.path.exists("service_account.json"):
-            raise FileNotFoundError(
-                "Không tìm thấy GOOGLE_CREDS_JSON trên Render hoặc service_account.json khi chạy local"
+            raise ValueError(
+                "Thiếu GOOGLE_CREDS_JSON trên Render Environment hoặc service_account.json khi chạy local."
             )
         with open("service_account.json", "r", encoding="utf-8") as f:
             info = json.load(f)
 
-    if not info:
-        raise ValueError("Không đọc được service account JSON")
-
     for key in ["client_email", "private_key", "project_id"]:
         if key not in info:
-            raise ValueError(f"service_account.json thiếu {key}")
+            raise ValueError(f"Service account JSON thiếu {key}")
 
-    credentials = ee.ServiceAccountCredentials(info["client_email"], "service_account.json")
-
-    
-    gee_ready = False
-provinces_fc = None
-gsw = None
-permanent_water = None
-
-
-def init_gee():
-
-    global gee_ready
-    global provinces_fc
-    global gsw
-    global permanent_water
-
-    if gee_ready:
-        return
-
-    if not os.environ.get("GOOGLE_CREDS_JSON"):
-        raise ValueError(
-            "Thiếu GOOGLE_CREDS_JSON trên Render Environment"
-        )
-
-    info = json.loads(
-        os.environ["GOOGLE_CREDS_JSON"]
-    )
-
-    with open("service_account.json", "w", encoding="utf-8") as f:
+    # Ghi tạm runtime file cho earthengine-api đọc credential.
+    with open("/tmp/service_account.json", "w", encoding="utf-8") as f:
         json.dump(info, f)
 
-    service_account = info["client_email"]
-    project_id = info["project_id"]
-
     credentials = ee.ServiceAccountCredentials(
-        service_account,
-        "service_account.json"
+        info["client_email"],
+        "/tmp/service_account.json"
     )
 
     ee.Initialize(
         credentials,
-        project=project_id
+        project=info["project_id"]
     )
 
     provinces_fc = (
-        ee.FeatureCollection(
-            "FAO/GAUL/2015/level1"
-        )
-        .filter(
-            ee.Filter.eq(
-                "ADM0_NAME",
-                "Viet Nam"
-            )
-        )
-    )
-
-    gsw = ee.Image(
-        "JRC/GSW1_4/GlobalSurfaceWater"
-    )
-
-    permanent_water = (
-        gsw
-        .select("occurrence")
-        .gt(80)
+        ee.FeatureCollection("FAO/GAUL/2015/level1")
+        .filter(ee.Filter.eq("ADM0_NAME", "Viet Nam"))
     )
 
     gee_ready = True
 
 
-# Tỉnh mới/gộp tỉnh theo file GEE mẫu bạn gửi
+# =========================================================
+# TỈNH MỚI / GỘP TỈNH THEO CODE GEE MẪU
+# =========================================================
 coastal_data = [
     {"label": "An Giang", "search": ["Kien Giang", "An Giang"]},
     {"label": "Bac Ninh", "search": ["Bac Giang", "Bac Ninh"]},
@@ -230,10 +194,24 @@ coastal_data = [
     {"label": "Vinh Long", "search": ["Ben Tre", "Vinh Long", "Tra Vinh"]}
 ]
 
-non_coastal = [
-    "Cao Bang", "Dien Bien", "Lai Chau", "Lang Son", "Son La", "Thai Nguyen",
-    "Tuyen Quang", "Lao Cai", "Phu Tho", "Bac Ninh", "Dong Nai", "Tay Ninh", "Ha Noi"
-]
+non_coastal = {
+    "Cao Bang", "Dien Bien", "Lai Chau", "Lang Son", "Son La",
+    "Thai Nguyen", "Tuyen Quang", "Lao Cai", "Phu Tho",
+    "Bac Ninh", "Dong Nai", "Tay Ninh", "Ha Noi"
+}
+
+# Bounds gần đúng để map fit không cần gọi getInfo() nặng.
+BOUNDS = {
+    "An Giang": [[103.7, 8.4], [106.1, 8.4], [106.1, 11.1], [103.7, 11.1]],
+    "Khanh Hoa": [[108.3, 10.4], [109.7, 10.4], [109.7, 13.4], [108.3, 13.4]],
+    "Ca Mau": [[104.4, 8.2], [106.2, 8.2], [106.2, 10.2], [104.4, 10.2]],
+    "Da Nang": [[107.6, 15.1], [108.9, 15.1], [108.9, 16.4], [107.6, 16.4]],
+    "TP Ho Chi Minh": [[106.1, 9.7], [107.7, 9.7], [107.7, 11.4], [106.1, 11.4]],
+    "Hai Phong": [[106.2, 20.3], [107.3, 20.3], [107.3, 21.2], [106.2, 21.2]],
+    "Quang Ninh": [[106.5, 20.5], [108.2, 20.5], [108.2, 21.7], [106.5, 21.7]],
+    "Vinh Long": [[105.2, 9.3], [106.9, 9.3], [106.9, 10.5], [105.2, 10.5]]
+}
+DEFAULT_BOUNDS = [[102.0, 8.0], [110.0, 8.0], [110.0, 23.5], [102.0, 23.5]]
 
 
 def get_selected(province):
@@ -242,145 +220,127 @@ def get_selected(province):
 
     selected = next((d for d in coastal_data if d["label"] == province), None)
     if not selected:
-        raise LookupError(f"Không tìm thấy tỉnh {province}")
+        raise LookupError(f"Không tìm thấy cấu hình tỉnh {province}")
     return selected
 
 
 def get_region_and_zone(province):
     """
-    Giống logic GEE mẫu:
-    - aoi = toàn bộ tỉnh/vùng gộp
-    - offshore_zone = dải ngoài ranh giới đất liền để lấy coastline/NDWI/MNDWI
+    Làm giống GEE mẫu:
+    - aoi: toàn bộ tỉnh/vùng gộp -> vẽ ranh giới vàng.
+    - offshore_zone: phần buffer nằm ngoài aoi -> lấy NDWI/MNDWI/đường bờ.
+    Không gọi size().getInfo() để tránh Render timeout/OOM.
     """
     selected = get_selected(province)
     region = provinces_fc.filter(ee.Filter.inList("ADM1_NAME", selected["search"]))
-
-    count_region = region.size().getInfo()
-    if count_region == 0:
-        raise LookupError(f"Không tìm thấy ranh giới GEE cho {province}")
-
     aoi = region.geometry().dissolve()
+
     coastal_buffer = aoi.buffer(2000)
     offshore_zone = coastal_buffer.difference(aoi, 1).intersection(aoi.bounds(), 1)
     return aoi, offshore_zone
 
 
-def safe_bounds(geom):
-    try:
-        return geom.bounds().getInfo()["coordinates"][0]
-    except Exception as e:
-        print("BOUNDS ERROR:", e)
-        return [[104.0, 8.0], [109.5, 8.0], [109.5, 23.0], [104.0, 23.0], [104.0, 8.0]]
-
-
-def get_map_url(image, vis_params):
-    return image.getMapId(vis_params)["tile_fetcher"].url_format
-
-
-def get_float(dictionary, key):
-    if not dictionary:
-        return 0.0
-    value = dictionary.get(key, 0)
-    return 0.0 if value is None else float(value)
+def get_map_url(image, vis):
+    return image.getMapId(vis)["tile_fetcher"].url_format
 
 
 def get_analysis(offshore_zone, year):
     """
-    Phiên bản GEE-style:
-    - Landsat TOA B3/B5/B6 giống code mẫu
-    - water = MNDWI threshold
-    - smooth water bằng focal_max/focal_min/focal_mode
-    - coastline = CannyEdgeDetector sigma=2, liền nét hơn
+    Nhẹ hơn bản cũ để tránh Render 500:
+    - Không dùng connectedPixelCount lớn.
+    - Không reduceRegion trong bước tạo layer.
+    - Đường bờ được làm mượt bằng focal + Canny như GEE mẫu.
     """
     l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA")
     l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_TOA")
 
-    dataset = (
+    collection = (
         l8.merge(l9)
         .filterBounds(offshore_zone)
         .filterDate(f"{year}-01-01", f"{year}-12-31")
-        .filter(ee.Filter.lt("CLOUD_COVER", 30))
+        .filter(ee.Filter.lt("CLOUD_COVER", 45))
         .sort("CLOUD_COVER")
-        .limit(20)
+        .limit(12)
     )
 
-    img = dataset.median().clip(offshore_zone)
+    img = collection.median().clip(offshore_zone)
 
     ndwi = img.normalizedDifference(["B3", "B5"]).rename("NDWI")
     mndwi = img.normalizedDifference(["B3", "B6"]).rename("MNDWI")
 
     water = mndwi.gt(0.15)
-
-    water = water.focal_max(1).focal_min(1).focal_mode(2)
-    water = water.updateMask(water.connectedPixelCount(500, True).gte(500))
-    water = water.clip(offshore_zone.buffer(1000)).rename("water")
+    water = water.focal_max(1).focal_min(1).focal_mode(1).rename("water")
 
     edge = ee.Algorithms.CannyEdgeDetector(
         image=water,
         threshold=0.1,
         sigma=2
     )
-    edge = edge.focal_max(1).focal_mode(1).selfMask().rename("shoreline")
-
-    vals = {"NDWI": 0, "MNDWI": 0}
-
-    try:
-        stats = (
-            ndwi.addBands(mndwi)
-            .reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=offshore_zone,
-                scale=120,
-                bestEffort=True,
-                tileScale=4,
-                maxPixels=1e10
-            )
-            .getInfo()
-        )
-        if stats:
-            vals = stats
-    except Exception as e:
-        print("STATS ERROR:", e)
+    edge = edge.focal_max(1).selfMask().rename("shoreline")
 
     return {
         "ndwi": ndwi,
         "mndwi": mndwi,
         "water": water,
-        "edge": edge,
-        "vals": vals
+        "edge": edge
     }
 
 
-def calculate_area(mask, band_name, geometry):
+def safe_reduce_mean(image, geometry):
+    """Reduce rất thô. Nếu EE chậm/lỗi thì trả 0 để không chết app."""
     try:
-        area_image = ee.Image.pixelArea().updateMask(mask).rename(band_name)
-        result = area_image.reduceRegion(
+        result = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=geometry,
+            scale=1000,
+            bestEffort=True,
+            tileScale=2,
+            maxPixels=1e7
+        ).getInfo()
+        return result or {}
+    except Exception as e:
+        print("STATS ERROR:", e)
+        return {}
+
+
+def safe_area(mask, band_name, geometry):
+    """Tính diện tích thô. Có lỗi thì trả 0 để tránh HTTP 500."""
+    try:
+        area_img = ee.Image.pixelArea().updateMask(mask).rename(band_name)
+        result = area_img.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=geometry,
-            scale=120,
+            scale=1000,
             bestEffort=True,
-            tileScale=4,
-            maxPixels=1e10
+            tileScale=2,
+            maxPixels=1e7
         ).getInfo()
-        if result and band_name in result and result[band_name]:
-            return round(result[band_name] / 10000, 2)
-        return 0
+        value = result.get(band_name, 0) if result else 0
+        return round(float(value or 0) / 10000, 2)
     except Exception as e:
         print("AREA ERROR:", e)
-        return 0
+        return 0.0
+
+
+def float_or_zero(v):
+    try:
+        if v is None:
+            return 0.0
+        return float(v)
+    except Exception:
+        return 0.0
 
 
 def build_layers(aoi, r1, r2):
     erosion = (
         r1["water"].And(r2["water"].Not())
         .rename("erosion")
-        .updateMask(r1["water"].And(r2["water"].Not()))
+        .selfMask()
     )
-
     accretion = (
         r2["water"].And(r1["water"].Not())
         .rename("accretion")
-        .updateMask(r2["water"].And(r1["water"].Not()))
+        .selfMask()
     )
 
     layers = {
@@ -422,31 +382,39 @@ def run_analysis():
     try:
         init_gee()
 
-        province = request.args.get("province")
-        y1 = request.args.get("y1")
-        y2 = request.args.get("y2")
+        province = request.args.get("province", "").strip()
+        y1 = request.args.get("y1", "").strip()
+        y2 = request.args.get("y2", "").strip()
 
         if not province or not y1 or not y2:
             return jsonify({"error": "Thiếu province, y1 hoặc y2"}), 400
 
         aoi, offshore_zone = get_region_and_zone(province)
+
         r1 = get_analysis(offshore_zone, y1)
         r2 = get_analysis(offshore_zone, y2)
         layers, erosion, accretion = build_layers(aoi, r1, r2)
 
-        erosion_ha = calculate_area(erosion, "erosion", offshore_zone)
-        accretion_ha = calculate_area(accretion, "accretion", offshore_zone)
+        stats1 = safe_reduce_mean(r1["ndwi"].addBands(r1["mndwi"]), offshore_zone)
+        stats2 = safe_reduce_mean(r2["ndwi"].addBands(r2["mndwi"]), offshore_zone)
 
-        ndwi1 = get_float(r1["vals"], "NDWI")
-        mndwi1 = get_float(r1["vals"], "MNDWI")
-        ndwi2 = get_float(r2["vals"], "NDWI")
-        mndwi2 = get_float(r2["vals"], "MNDWI")
+        ndwi1 = float_or_zero(stats1.get("NDWI", 0))
+        mndwi1 = float_or_zero(stats1.get("MNDWI", 0))
+        ndwi2 = float_or_zero(stats2.get("NDWI", 0))
+        mndwi2 = float_or_zero(stats2.get("MNDWI", 0))
 
-        save_data(province, int(y1), ndwi1, mndwi1, erosion_ha, accretion_ha)
-        save_data(province, int(y2), ndwi2, mndwi2, erosion_ha, accretion_ha)
+        erosion_ha = safe_area(erosion, "erosion", offshore_zone)
+        accretion_ha = safe_area(accretion, "accretion", offshore_zone)
+
+        # Lưu DB nhưng lỗi DB không được làm chết API.
+        try:
+            save_data(province, int(y1), ndwi1, mndwi1, erosion_ha, accretion_ha)
+            save_data(province, int(y2), ndwi2, mndwi2, erosion_ha, accretion_ha)
+        except Exception as db_error:
+            print("DB SAVE ERROR:", db_error)
 
         return jsonify({
-            "mode": "gee-style-smooth-coastline",
+            "mode": "gee-style-stable",
             "message": "Ranh giới là toàn bộ tỉnh/vùng gộp; đường bờ lấy từ offshore zone giống GEE.",
             "layers": layers,
             "stats": {
@@ -455,7 +423,7 @@ def run_analysis():
                 "erosion_ha": float(erosion_ha),
                 "accretion_ha": float(accretion_ha)
             },
-            "bounds": safe_bounds(aoi)
+            "bounds": BOUNDS.get(province, DEFAULT_BOUNDS)
         })
 
     except ValueError as e:
@@ -467,85 +435,50 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
-@app.route("/gee_heavy")
-def gee_heavy():
+@app.route("/forecast")
+def forecast():
+    province = request.args.get("province", "").strip()
+    if not province:
+        return jsonify({"error": "Thiếu province"}), 400
+
     try:
-        init_gee()
+        conn = sqlite3.connect("data/coastal.db")
+        df = pd.read_sql_query(
+            """
+            SELECT *
+            FROM coastal_analysis
+            WHERE province = ?
+            ORDER BY year
+            """,
+            conn,
+            params=(province,)
+        )
+        conn.close()
 
-        province = request.args.get("province")
-        y1 = request.args.get("y1")
-        y2 = request.args.get("y2")
-        layer = request.args.get("layer")
+        if len(df) < 2:
+            return jsonify({"error": "Không đủ dữ liệu"})
 
-        allowed_layers = ["shoreline1", "shoreline2", "erosion", "accretion"]
+        df = df.groupby("year", as_index=False).agg({"erosion": "mean"}).sort_values("year")
+        if len(df) < 2:
+            return jsonify({"error": "Không đủ dữ liệu"})
 
-        if not province or not y1 or not y2 or not layer:
-            return jsonify({"error": "Thiếu province, y1, y2 hoặc layer"}), 400
-        if layer not in allowed_layers:
-            return jsonify({"error": f"Layer không hợp lệ. Chỉ nhận: {', '.join(allowed_layers)}"}), 400
+        X = np.array(df["year"]).reshape(-1, 1)
+        y = np.array(df["erosion"])
+        model = LinearRegression()
+        model.fit(X, y)
 
-        cache_key = f"{province}_{y1}_{y2}_{layer}_gee_style"
-        if cache_key in tile_cache:
-            return jsonify({"mode": "advanced-cache", "layer": layer, "layers": {layer: tile_cache[cache_key]}})
+        last_year = int(df["year"].max())
+        result = []
+        for i in range(1, 6):
+            year = last_year + i
+            pred = model.predict([[year]])[0]
+            result.append({"year": year, "prediction": round(float(pred), 2)})
 
-        aoi, offshore_zone = get_region_and_zone(province)
-        r1 = get_analysis(offshore_zone, y1)
-        r2 = get_analysis(offshore_zone, y2)
-        layers, erosion, accretion = build_layers(aoi, r1, r2)
-        url = layers[layer]
-        tile_cache[cache_key] = url
-
-        return jsonify({"mode": "advanced", "layer": layer, "layers": {layer: url}})
+        return jsonify(result)
 
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
-
-
-@app.route("/forecast")
-def forecast():
-    province = request.args.get("province")
-    if not province:
-        return jsonify({"error": "Thiếu province"}), 400
-
-    conn = sqlite3.connect("data/coastal.db")
-    df = pd.read_sql_query(
-        """
-        SELECT *
-        FROM coastal_analysis
-        WHERE province = ?
-        ORDER BY year
-        """,
-        conn,
-        params=(province,)
-    )
-    conn.close()
-
-    if len(df) < 2:
-        return jsonify({"error": "Không đủ dữ liệu"})
-
-    df = (
-        df.groupby("year", as_index=False)
-        .agg({"erosion": "mean", "accretion": "mean"})
-        .sort_values("year")
-    )
-
-    if len(df) < 2:
-        return jsonify({"error": "Không đủ dữ liệu"})
-
-    X = np.array(df["year"]).reshape(-1, 1)
-    y = np.array(df["erosion"])
-    model = LinearRegression()
-    model.fit(X, y)
-
-    last_year = int(df["year"].max())
-    result = []
-    for i in range(1, 6):
-        year = last_year + i
-        pred = model.predict([[year]])[0]
-        result.append({"year": year, "prediction": round(float(pred), 2)})
-
-    return jsonify(result)
 
 
 @app.route("/chat_ai", methods=["POST"])
@@ -554,7 +487,7 @@ def chat_ai():
         if not client:
             return jsonify({"error": "Thiếu GEMINI_API_KEY trong Render Environment"}), 500
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "Không có dữ liệu gửi lên"}), 400
 
@@ -569,13 +502,11 @@ Hãy trả lời bằng tiếng Việt, có cấu trúc rõ ràng:
 3. Dự báo xu hướng đường bờ.
 4. Đề xuất giải pháp quản lý ven biển.
 """
-
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
         )
         answer = getattr(response, "text", None)
-
         if not answer:
             return jsonify({"error": "AI không phản hồi"}), 500
 
