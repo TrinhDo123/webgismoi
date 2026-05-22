@@ -3,7 +3,7 @@ print(os.name)
 import sys
 import json
 import ee
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import sqlite3
 import pandas as pd
@@ -23,9 +23,7 @@ app = Flask(__name__)
 # 1. ĐỊNH NGHĨA HÀM KHỞI TẠO DATABASE TRƯỚC (QUAN TRỌNG)
 # ========================================================
 def init_db():
-    conn = sqlite3.connect(
-        'data/coastal.db'
-    )
+    conn = sqlite3.connect('data/coastal.db')
     cursor = conn.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS coastal_analysis(
@@ -56,47 +54,29 @@ CORS(app, resources={
     }
 })
 
+# ĐỊNH NGHĨA ROUTE TRANG CHỦ (Hiển thị file index.html)
+@app.route('/')
+def home():
+    return render_template('index.html')
+
 # =========================
 # SAVE DATA
 # =========================
-def save_data(
-    province,
-    year,
-    ndwi,
-    mndwi,
-    erosion,
-    accretion
-):
-    conn = sqlite3.connect(
-        'data/coastal.db'
-    )
+def save_data(province, year, ndwi, mndwi, erosion, accretion):
+    conn = sqlite3.connect('data/coastal.db')
     cursor = conn.cursor()
     cursor.execute('''
-    INSERT INTO coastal_analysis(
-        province,
-        year,
-        ndwi,
-        mndwi,
-        erosion,
-        accretion
-    )
+    INSERT INTO coastal_analysis(province, year, ndwi, mndwi, erosion, accretion)
     VALUES(?,?,?,?,?,?)
-    ''',(
-        province,
-        year,
-        ndwi,
-        mndwi,
-        erosion,
-        accretion
-    ))
+    ''',(province, year, ndwi, mndwi, erosion, accretion))
     conn.commit()
     conn.close()
 
 # =========================
-# INIT GEE (Bọc giáp an toàn tuyệt đối)
+# INIT GEE (Bọc giáp an toàn, dùng đường dẫn tương đối chuẩn)
 # =========================
 service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
-cred_path = 'service_account.json'
+cred_path = 'service_account.json'  # <-- Đường dẫn tương đối chuẩn cho Render
 
 env_creds = os.environ.get('GOOGLE_CREDS_JSON')
 
@@ -112,7 +92,7 @@ if env_creds:
 else:
     print("Running in local mode / No GOOGLE_CREDS_JSON env detected. Using local service_account.json file.")
 
-# Luôn khởi tạo biến credentials nằm ngoài khối điều kiện
+# Sử dụng biến cred_path đồng bộ cho mọi môi trường
 try:
     credentials = ee.ServiceAccountCredentials(service_account, cred_path)
     ee.Initialize(credentials)
