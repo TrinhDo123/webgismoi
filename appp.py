@@ -46,7 +46,6 @@ def index():
     return render_template("index.html")
 
 
-
 # =========================
 # HEALTH ROUTE - TEST API
 # =========================
@@ -162,28 +161,92 @@ def init_gee():
     if gee_ready:
         return
 
-    service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+    info = None
+    key_path = None
 
-    if os.environ.get("GOOGLE_CREDS_JSON"):
+    # =========================
+    # 1) Ưu tiên key từ Render Environment
+    #    Dán toàn bộ nội dung private-key JSON vào GOOGLE_CREDS_JSON
+    # =========================
+    env_json = (
+        os.environ.get("GOOGLE_CREDS_JSON")
+        or os.environ.get("GEE_PRIVATE_KEY_JSON")
+    )
 
-        info = json.loads(
-            os.environ["GOOGLE_CREDS_JSON"]
-        )
+    if env_json:
 
-        with open("service_account.json", "w") as f:
+        try:
+            info = json.loads(env_json)
+
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "GOOGLE_CREDS_JSON / GEE_PRIVATE_KEY_JSON không phải JSON hợp lệ. "
+                "Hãy copy nguyên nội dung file private-key JSON vào Render Environment."
+            ) from e
+
+        key_path = "service_account_runtime.json"
+
+        with open(key_path, "w", encoding="utf-8") as f:
             json.dump(info, f)
 
-    if not os.path.exists("service_account.json"):
-        raise FileNotFoundError(
-            "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
-        )
+    # =========================
+    # 2) Nếu chạy local thì tự tìm file key trong thư mục project
+    #    Hỗ trợ cả private-key.json.json bạn vừa upload
+    # =========================
+    else:
+
+        possible_key_files = [
+            "service_account.json",
+            "private-key.json",
+            "private-key.json.json"
+        ]
+
+        for file_name in possible_key_files:
+            if os.path.exists(file_name):
+                key_path = file_name
+                break
+
+        if not key_path:
+            raise FileNotFoundError(
+                "Không tìm thấy file key. Hãy đặt service_account.json hoặc private-key.json.json "
+                "trong thư mục project khi chạy local, hoặc cấu hình GOOGLE_CREDS_JSON trên Render."
+            )
+
+        with open(key_path, "r", encoding="utf-8") as f:
+            info = json.load(f)
+
+    # =========================
+    # 3) Kiểm tra nội dung key
+    # =========================
+    required_fields = [
+        "client_email",
+        "private_key",
+        "project_id"
+    ]
+
+    for field in required_fields:
+        if field not in info or not info[field]:
+            raise ValueError(
+                f"File private-key thiếu trường bắt buộc: {field}"
+            )
+
+    service_account = info["client_email"]
+    project_id = info["project_id"]
 
     credentials = ee.ServiceAccountCredentials(
         service_account,
-        "service_account.json"
+        key_path
     )
 
-    ee.Initialize(credentials)
+    # Khởi tạo Earth Engine bằng đúng project trong private-key
+    try:
+        ee.Initialize(
+            credentials,
+            project=project_id
+        )
+
+    except TypeError:
+        ee.Initialize(credentials)
 
     provinces_fc = (
         ee.FeatureCollection(
@@ -608,7 +671,7 @@ def run_analysis():
 
             "mode": "light",
 
-            "message": "Đã tải lớp cơ bản. Bấm 'Tải lớp nâng cao' để tải đường bờ, xói mòn và bồi tụ.",
+            "message": "Đã tải lớp cơ bản. Bấm chọn Đường bờ / Xói mòn / Bồi tụ để tải lớp nâng cao.",
 
             "layers": {
 
