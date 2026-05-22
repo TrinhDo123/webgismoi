@@ -1,21 +1,43 @@
-const BASE_URL = "https://webgismoi.onrender.com";
+const BASE_URL = window.location.origin.includes("localhost")
+    ? "http://127.0.0.1:5000"
+    : window.location.origin;
+
 const API_URL = `${BASE_URL}/gee`;
 
-// Chỉ giữ các tỉnh/vùng có bờ biển thật.
-// Không cho chọn tỉnh nội địa như An Giang, Bắc Ninh, Điện Biên...
 const provinces = [
+    "An Giang",
+    "Bac Ninh",
     "Ca Mau",
+    "Cao Bang",
+    "Dak Lak",
+    "Dien Bien",
+    "Dong Nai",
+    "Dong Thap",
+    "Gia Lai",
     "Ha Tinh",
+    "Hung Yen",
     "Khanh Hoa",
+    "Lai Chau",
+    "Lam Dong",
+    "Lang Son",
+    "Lao Cai",
     "Nghe An",
+    "Ninh Binh",
+    "Phu Tho",
     "Quang Ngai",
     "Quang Ninh",
     "Quang Tri",
+    "Son La",
+    "Tay Ninh",
+    "Thai Nguyen",
     "Thanh Hoa",
+    "Can Tho",
     "Da Nang",
+    "Ha Noi",
     "Hai Phong",
     "TP Ho Chi Minh",
     "Hue",
+    "Tuyen Quang",
     "Vinh Long"
 ];
 
@@ -24,26 +46,19 @@ const y1Select = document.getElementById("y1");
 const y2Select = document.getElementById("y2");
 
 provinces.forEach(p => {
-    provinceSelect.add(
-        new Option(p, p)
-    );
+    provinceSelect.add(new Option(p, p));
 });
 
 for (let y = 2015; y <= 2026; y++) {
-    y1Select.add(
-        new Option(y, y)
-    );
-
-    y2Select.add(
-        new Option(y, y)
-    );
+    y1Select.add(new Option(y, y));
+    y2Select.add(new Option(y, y));
 }
 
-provinceSelect.value = "Khanh Hoa";
-y1Select.value = 2020;
+provinceSelect.value = "An Giang";
+y1Select.value = 2016;
 y2Select.value = 2024;
 
-const map = L.map("map").setView([12.3, 109.1], 8);
+const map = L.map("map").setView([10.2, 105.4], 7);
 
 L.tileLayer(
     "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
@@ -57,57 +72,12 @@ let resData = null;
 let chart1 = null;
 let chart2 = null;
 
-const heavyLayers = [
-    "shoreline1",
-    "shoreline2",
-    "erosion",
-    "accretion"
-];
-
-// Đọc JSON an toàn để tránh lỗi: Unexpected token '<', '<html>...'
-async function fetchJSON(url, options = {}) {
-    const response = await fetch(url, options);
-    const text = await response.text();
-
-    let data;
-
-    try {
-        data = JSON.parse(text);
-    } catch (e) {
-        throw new Error(
-            "Server không trả về JSON. Có thể API bị lỗi hoặc timeout. HTTP " +
-            response.status +
-            ". Nội dung đầu: " +
-            text.slice(0, 160)
-        );
-    }
-
-    if (!response.ok) {
-        throw new Error(
-            data.error || `HTTP ${response.status}`
-        );
-    }
-
-    return data;
-}
-
-function clearMapLayers() {
-    Object.values(layers).forEach(layer => {
-        if (map.hasLayer(layer)) {
-            map.removeLayer(layer);
-        }
-    });
-
-    layers = {};
-}
-
 function buildLayerUI() {
     const y1 = y1Select.value;
     const y2 = y2Select.value;
 
     const config = [
-        { id: "boundary", name: "Ranh giới vùng bờ" },
-        { id: "coast_strip", name: "Dải ven biển thật" },
+        { id: "boundary", name: "Ranh giới" },
         { id: "shoreline1", name: "Đường bờ " + y1 },
         { id: "shoreline2", name: "Đường bờ " + y2 },
         { id: "erosion", name: "Xói mòn" },
@@ -119,7 +89,6 @@ function buildLayerUI() {
     ];
 
     const list = document.getElementById("layer-list");
-
     list.innerHTML = "";
 
     config.forEach(l => {
@@ -136,94 +105,57 @@ function buildLayerUI() {
     });
 }
 
-async function toggleLayer(id) {
-    const chk = document.getElementById("chk_" + id);
+async function fetchJSON(url, options = {}) {
+    const response = await fetch(url, options);
+    const text = await response.text();
 
-    if (!chk) return;
-
-    const checked = chk.checked;
-
-    if (!checked) {
-        if (layers[id] && map.hasLayer(layers[id])) {
-            map.removeLayer(layers[id]);
-        }
-
-        return;
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        throw new Error(
+            "Server không trả về JSON. HTTP " + response.status +
+            ". Nội dung đầu: " + text.slice(0, 160)
+        );
     }
 
-    if (layers[id]) {
-        layers[id].addTo(map);
-        return;
+    if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
     }
 
-    if (heavyLayers.includes(id)) {
-        await loadHeavyLayer(id);
-        return;
-    }
-
-    alert("Lớp này chưa có dữ liệu. Hãy chạy phân tích trước.");
-    chk.checked = false;
+    return data;
 }
 
-async function loadHeavyLayer(layerId) {
-    try {
-        const chk = document.getElementById("chk_" + layerId);
-
-        if (chk) {
-            chk.disabled = true;
+function clearMapLayers() {
+    Object.values(layers).forEach(layer => {
+        if (map.hasLayer(layer)) {
+            map.removeLayer(layer);
         }
+    });
+    layers = {};
+}
 
-        const province = encodeURIComponent(
-            provinceSelect.value
-        );
+function toggleLayer(id) {
+    const chk = document.getElementById("chk_" + id);
+    if (!chk) return;
 
-        const y1 = y1Select.value;
-        const y2 = y2Select.value;
+    if (!layers[id]) {
+        chk.checked = false;
+        alert("Lớp này chưa có dữ liệu. Hãy chạy phân tích trước.");
+        return;
+    }
 
-        const heavyUrl =
-            `${BASE_URL}/gee_heavy?province=${province}&y1=${y1}&y2=${y2}&layer=${layerId}`;
-
-        console.log("HEAVY LAYER URL:", heavyUrl);
-
-        const data = await fetchJSON(heavyUrl);
-
-        if (!data.layers || !data.layers[layerId]) {
-            throw new Error(
-                "Server không trả về dữ liệu layer " + layerId
-            );
+    if (chk.checked) {
+        layers[id].addTo(map);
+    } else {
+        if (map.hasLayer(layers[id])) {
+            map.removeLayer(layers[id]);
         }
-
-        layers[layerId] = L.tileLayer(
-            data.layers[layerId],
-            {
-                opacity: 0.9
-            }
-        );
-
-        layers[layerId].addTo(map);
-
-        if (chk) {
-            chk.checked = true;
-            chk.disabled = false;
-        }
-
-    } catch (err) {
-        console.log(err);
-
-        const chk = document.getElementById("chk_" + layerId);
-
-        if (chk) {
-            chk.checked = false;
-            chk.disabled = false;
-        }
-
-        alert(err.message || "Lỗi tải lớp nâng cao");
     }
 }
 
 async function startAnalysis() {
     const btn = document.getElementById("btnStart");
-
     btn.innerHTML = "⌛ ĐANG XỬ LÝ...";
     btn.disabled = true;
 
@@ -231,19 +163,14 @@ async function startAnalysis() {
     clearMapLayers();
 
     try {
-        const province = encodeURIComponent(
-            provinceSelect.value
-        );
-
+        const province = encodeURIComponent(provinceSelect.value);
         const y1 = y1Select.value;
         const y2 = y2Select.value;
-
         const url = `${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
 
         console.log("API URL:", url);
 
         const data = await fetchJSON(url);
-
         resData = data;
 
         for (let k in resData.layers) {
@@ -254,38 +181,25 @@ async function startAnalysis() {
                 }
             );
 
-            // Chỉ bật mặc định các lớp nhẹ để không làm rối bản đồ.
-            if (
-                [
-                    "boundary",
-                    "shoreline1",
-                    "shoreline2"
-                ].includes(k)
-            ) {
+            // Mặc định giống hình mẫu: bật ranh giới và hai đường bờ.
+            if (["boundary", "shoreline1", "shoreline2"].includes(k)) {
                 layers[k].addTo(map);
-
                 const chk = document.getElementById("chk_" + k);
-
-                if (chk) {
-                    chk.checked = true;
-                }
+                if (chk) chk.checked = true;
             }
         }
 
         const b = resData.bounds;
-
-        if (Array.isArray(b) && b.length > 0) {
-            const bounds = L.latLngBounds(
-                b.map(p => [p[1], p[0]])
-            );
-
-            map.fitBounds(bounds);
+        if (Array.isArray(b) && b.length > 2) {
+            map.fitBounds([
+                [b[0][1], b[0][0]],
+                [b[2][1], b[2][0]]
+            ]);
         }
 
         updateStats();
         renderCharts();
         loadForecast();
-
     } catch (err) {
         console.log(err);
         alert(err.message);
@@ -305,86 +219,56 @@ function updateStats() {
             <b>Năm ${y1Select.value}</b>
             <br><br>
             NDWI:
-            <span class="success">
-                ${Number(s.year1.NDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year1.NDWI).toFixed(4)}</span>
             <br>
             MNDWI:
-            <span class="success">
-                ${Number(s.year1.MNDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year1.MNDWI).toFixed(4)}</span>
         </div>
 
         <div class="info-box">
             <b>Năm ${y2Select.value}</b>
             <br><br>
             NDWI:
-            <span class="success">
-                ${Number(s.year2.NDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year2.NDWI).toFixed(4)}</span>
             <br>
             MNDWI:
-            <span class="success">
-                ${Number(s.year2.MNDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year2.MNDWI).toFixed(4)}</span>
         </div>
 
         <div class="info-box">
             🔴 Xói mòn:
-            <span class="danger">
-                ${Number(s.erosion_ha).toFixed(2)} ha
-            </span>
+            <span class="danger">${Number(s.erosion_ha).toFixed(2)} ha</span>
             <br><br>
             🟢 Bồi tụ:
-            <span class="success">
-                ${Number(s.accretion_ha).toFixed(2)} ha
-            </span>
+            <span class="success">${Number(s.accretion_ha).toFixed(2)} ha</span>
         </div>
     `;
 }
 
 async function loadForecast() {
     try {
-        const province = encodeURIComponent(
-            provinceSelect.value
-        );
-
-        const data = await fetchJSON(
-            `${BASE_URL}/forecast?province=${province}`
-        );
+        const province = encodeURIComponent(provinceSelect.value);
+        const data = await fetchJSON(`${BASE_URL}/forecast?province=${province}`);
 
         if (data.error) {
             document.getElementById("ai-report").innerHTML = `
-                <span style="color:red">
-                    ${data.error}
-                </span>
+                <span style="color:red">${data.error}</span>
             `;
             return;
         }
 
         if (!Array.isArray(data) || data.length === 0) {
             document.getElementById("ai-report").innerHTML = `
-                <span style="color:red">
-                    Chưa có dữ liệu dự báo
-                </span>
+                <span style="color:red">Chưa có dữ liệu dự báo</span>
             `;
             return;
         }
 
         const s = resData.stats;
-
         const erosion = Number(s.erosion_ha || 0);
         const accretion = Number(s.accretion_ha || 0);
-
-        const ndwi = (
-            Number(s.year1.NDWI || 0) +
-            Number(s.year2.NDWI || 0)
-        ) / 2;
-
-        const mndwi = (
-            Number(s.year1.MNDWI || 0) +
-            Number(s.year2.MNDWI || 0)
-        ) / 2;
+        const ndwi = (Number(s.year1.NDWI || 0) + Number(s.year2.NDWI || 0)) / 2;
+        const mndwi = (Number(s.year1.MNDWI || 0) + Number(s.year2.MNDWI || 0)) / 2;
 
         let erosionText = "";
         let ndwiText = "";
@@ -394,41 +278,42 @@ async function loadForecast() {
             erosionText = `
                 Khu vực đang có xu hướng
                 <b style="color:red">xói mòn mạnh hơn bồi tụ</b>.
+                Điều này cho thấy đường bờ biển có nguy cơ bị thu hẹp theo thời gian,
+                đặc biệt dưới tác động của sóng biển, dòng chảy và biến đổi khí hậu.
             `;
         } else if (accretion > erosion) {
             erosionText = `
                 Khu vực có xu hướng
                 <b style="color:green">bồi tụ mạnh hơn xói mòn</b>.
+                Điều này phản ánh quá trình tích tụ trầm tích đang diễn ra tương đối tốt.
             `;
         } else {
             erosionText = `
-                Khu vực đang tương đối cân bằng giữa xói mòn và bồi tụ.
+                Khu vực đang ở trạng thái tương đối cân bằng giữa xói mòn và bồi tụ.
             `;
         }
 
         if (ndwi < -0.3) {
-            ndwiText = "NDWI thấp, khu vực có tín hiệu nước bề mặt yếu.";
+            ndwiText = "Chỉ số NDWI ở mức thấp, phản ánh khu vực có lượng nước bề mặt ít.";
         } else if (ndwi <= 0.3) {
-            ndwiText = "NDWI trung bình, phản ánh vùng chuyển tiếp đất - nước.";
+            ndwiText = "Chỉ số NDWI ở mức trung bình, phản ánh trạng thái chuyển tiếp giữa đất và nước hoặc khu vực ẩm ướt.";
         } else {
-            ndwiText = "NDWI cao, khu vực có tín hiệu nước mặt rõ.";
+            ndwiText = "Chỉ số NDWI cao, cho thấy sự hiện diện mạnh của nước bề mặt.";
         }
 
         if (mndwi < -0.3) {
-            mndwiText = "MNDWI thấp, khả năng nhận diện nước yếu.";
+            mndwiText = "Chỉ số MNDWI thấp, phản ánh khu vực có khả năng chứa nước thấp.";
         } else if (mndwi <= 0.3) {
-            mndwiText = "MNDWI trung bình, phù hợp vùng ven biển/đất ngập nước.";
+            mndwiText = "Chỉ số MNDWI ở mức trung bình, cho thấy khu vực có sự pha trộn giữa nước và đất ngập ẩm.";
         } else {
-            mndwiText = "MNDWI cao, thể hiện vùng nước mặt rõ rệt.";
+            mndwiText = "Chỉ số MNDWI cao, phản ánh khả năng tồn tại nước mặt rõ rệt.";
         }
 
-        const lastPred = data[data.length - 1].prediction;
+        const last = data[data.length - 1];
 
         let html = `
         <div style="line-height:1.9;text-align:justify;font-size:13px;">
-            <b style="font-size:15px;color:#1e293b;">
-                🧠 PHÂN TÍCH AI VEN BIỂN
-            </b>
+            <b style="font-size:15px;color:#1e293b;">🧠 PHÂN TÍCH AI VEN BIỂN</b>
             <br><br>
             Khu vực nghiên cứu: <b>${provinceSelect.value}</b>
             <br><br>
@@ -438,10 +323,10 @@ async function loadForecast() {
             <br><br>
             ${mndwiText}
             <br><br>
-            AI dự báo đến năm <b>${data[data.length - 1].year}</b> mức biến động có thể đạt:
+            AI dự báo rằng đến năm <b>${last.year}</b> mức biến động có thể đạt:
             <br><br>
             <div style="background:#fee2e2;padding:12px;border-radius:10px;color:#b91c1c;font-weight:bold;text-align:center;font-size:18px;">
-                ${Number(lastPred).toFixed(2)} ha
+                ${Number(last.prediction).toFixed(2)} ha
             </div>
             <br>
             <b>Khuyến nghị:</b>
@@ -450,6 +335,7 @@ async function loadForecast() {
                 <li>Phục hồi rừng ngập mặn</li>
                 <li>Ứng dụng AI cảnh báo sớm</li>
                 <li>Quản lý khai thác ven biển</li>
+                <li>Theo dõi biến động thủy văn</li>
             </ul>
             <b>🔮 Dự báo chi tiết:</b>
             <br><br>
@@ -458,24 +344,17 @@ async function loadForecast() {
         data.forEach(item => {
             html += `
                 📅 Năm ${item.year}:
-                <b style="color:red">
-                    ${Number(item.prediction).toFixed(2)} ha
-                </b>
+                <b style="color:red">${Number(item.prediction).toFixed(2)} ha</b>
                 <br><br>
             `;
         });
 
         html += `</div>`;
-
         document.getElementById("ai-report").innerHTML = html;
-
     } catch (err) {
         console.log(err);
-
         document.getElementById("ai-report").innerHTML = `
-            <span style="color:red">
-                Lỗi tải dự báo AI hoặc chưa đủ dữ liệu
-            </span>
+            <span style="color:red">Lỗi tải dự báo AI hoặc chưa đủ dữ liệu</span>
         `;
     }
 }
@@ -494,7 +373,6 @@ async function askAI() {
     }
 
     const answerBox = document.getElementById("ai-answer");
-
     answerBox.innerHTML = "⌛ AI đang phân tích dữ liệu viễn thám...";
 
     try {
@@ -502,9 +380,7 @@ async function askAI() {
             `${BASE_URL}/chat_ai`,
             {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     question: question,
                     province: provinceSelect.value,
@@ -518,14 +394,10 @@ async function askAI() {
         }
 
         answerBox.innerText = data.answer;
-
     } catch (err) {
         console.log(err);
-
         answerBox.innerHTML = `
-            <span style="color:red">
-                ${err.message || "Lỗi kết nối AI"}
-            </span>
+            <span style="color:red">${err.message || "Lỗi kết nối AI"}</span>
         `;
     }
 }
@@ -537,7 +409,6 @@ function renderCharts() {
     if (chart2) chart2.destroy();
 
     const s = resData.stats;
-
     const year1 = y1Select.value;
     const year2 = y2Select.value;
 
@@ -574,10 +445,7 @@ function renderCharts() {
         {
             type: "pie",
             data: {
-                labels: [
-                    "Xói mòn",
-                    "Bồi tụ"
-                ],
+                labels: ["Xói mòn", "Bồi tụ"],
                 datasets: [{
                     data: [
                         Number(s.erosion_ha),
