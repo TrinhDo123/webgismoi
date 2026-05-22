@@ -7,7 +7,7 @@ import ee
 import numpy as np
 import pandas as pd
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from sklearn.linear_model import LinearRegression
 from google import genai
@@ -42,13 +42,52 @@ if GEMINI_API_KEY:
 # HOME ROUTE
 # =========================
 @app.route("/")
-def home():
+def index():
+    """
+    Trả giao diện web nếu có index.html.
+    Nếu chưa có frontend trong host thì trả JSON health.
+    """
+
+    if os.path.exists("index.html"):
+        return send_from_directory(
+            os.getcwd(),
+            "index.html"
+        )
+
     return jsonify({
         "status": "WebGIS API is running",
         "gee_test": "/gee?province=Da%20Nang&y1=2020&y2=2024",
+        "gee_heavy_test": "/gee_heavy?province=Da%20Nang&y1=2020&y2=2024&layer=shoreline1",
         "forecast_test": "/forecast?province=Da%20Nang",
         "chat_ai": "/chat_ai"
     })
+
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "WebGIS API is running",
+        "gee_test": "/gee?province=Da%20Nang&y1=2020&y2=2024",
+        "gee_heavy_test": "/gee_heavy?province=Da%20Nang&y1=2020&y2=2024&layer=shoreline1",
+        "forecast_test": "/forecast?province=Da%20Nang",
+        "chat_ai": "/chat_ai"
+    })
+
+
+@app.route("/appp.js")
+def serve_js():
+    return send_from_directory(
+        os.getcwd(),
+        "appp.js"
+    )
+
+
+@app.route("/style.css")
+def serve_css():
+    return send_from_directory(
+        os.getcwd(),
+        "style.css"
+    )
 
 
 # =========================
@@ -119,6 +158,9 @@ gee_ready = False
 provinces_fc = None
 gsw = None
 permanent_water = None
+
+# Cache nhẹ trong RAM để cùng một request không phải tạo tile lại nhiều lần
+tile_cache = {}
 
 
 def init_gee():
@@ -244,6 +286,96 @@ non_coastal = [
 ]
 
 
+
+# =========================
+# GEE HELPERS
+# =========================
+def get_selected(province):
+
+    if province in non_coastal:
+        raise ValueError(
+            f"Tỉnh {province} không giáp biển"
+        )
+
+    selected = next(
+        (
+            d for d in coastal_data
+            if d["label"] == province
+        ),
+        None
+    )
+
+    if not selected:
+        raise LookupError(
+            f"Không tìm thấy tỉnh {province}"
+        )
+
+    return selected
+
+
+def get_region_and_zone(province):
+
+    selected = get_selected(province)
+
+    region = provinces_fc.filter(
+        ee.Filter.inList(
+            "ADM1_NAME",
+            selected["search"]
+        )
+    )
+
+    count_region = region.size().getInfo()
+
+    if count_region == 0:
+        raise LookupError(
+            f"Không tìm thấy ranh giới GEE cho {province}"
+        )
+
+    aoi = (
+        region
+        .geometry()
+        .dissolve()
+    )
+
+    coastal_buffer = aoi.buffer(1000)
+
+    offshore_zone = coastal_buffer.difference(
+        aoi,
+        1
+    )
+
+    offshore_zone = offshore_zone.intersection(
+        aoi.bounds(),
+        1
+    )
+
+    return aoi, offshore_zone
+
+
+def safe_bounds(aoi):
+
+    try:
+        return aoi.bounds().getInfo()["coordinates"][0]
+
+    except Exception as e:
+        print("BOUNDS ERROR:", e)
+
+        return [
+            [108.0, 16.0],
+            [109.0, 16.0],
+            [109.0, 17.0],
+            [108.0, 17.0],
+            [108.0, 16.0]
+        ]
+
+
+def get_map_url(image, vis_params):
+
+    return image.getMapId(
+        vis_params
+    )["tile_fetcher"].url_format
+
+
 # =========================
 # CLOUD MASK
 # =========================
@@ -283,7 +415,7 @@ def mask_l8_sr(image):
 # =========================
 # GET ANALYSIS - OPTIMIZED FOR RENDER
 # =========================
-def get_analysis(offshore_zone, year):
+def get_analysis(offshore_zone, year, include_heavy=False):
 
     dataset = (
         ee.ImageCollection(
@@ -302,7 +434,7 @@ def get_analysis(offshore_zone, year):
         )
         .sort("CLOUD_COVER")
         .map(mask_l8_sr)
-        .limit(10)
+        .limit(8)
     )
 
     count = dataset.size().getInfo()
@@ -319,9 +451,7 @@ def get_analysis(offshore_zone, year):
     )
 
     green = img.select("SR_B3")
-
     nir = img.select("SR_B5")
-
     swir = img.select("SR_B6")
 
     ndwi = (
@@ -336,33 +466,14 @@ def get_analysis(offshore_zone, year):
         .rename("MNDWI")
     )
 
-    water = mndwi.gt(0.12)
-
-    water = water.And(
-        permanent_water
-    )
-
-    water = (
-        water
-        .focal_max(1)
-        .focal_min(1)
-    )
-
-    water = water.updateMask(
-        water.connectedPixelCount(
-            30,
-            True
-        ).gte(30)
-    )
-
-    edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=water,
-            threshold=0.1,
-            sigma=1
-        )
-        .selfMask()
-    )
+    result = {
+        "ndwi": ndwi,
+        "mndwi": mndwi,
+        "vals": {
+            "NDWI": 0,
+            "MNDWI": 0
+        }
+    }
 
     try:
 
@@ -371,38 +482,55 @@ def get_analysis(offshore_zone, year):
             .reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=offshore_zone,
-                scale=500,
+                scale=700,
                 bestEffort=True,
                 tileScale=16,
-                maxPixels=1e8
+                maxPixels=5e7
             )
             .getInfo()
         )
+
+        if stats:
+            result["vals"] = stats
 
     except Exception as e:
 
         print("STATS ERROR:", e)
 
-        stats = {
-            "NDWI": 0,
-            "MNDWI": 0
-        }
+    if include_heavy:
 
-    if not stats:
+        water = mndwi.gt(0.12)
 
-        stats = {
-            "NDWI": 0,
-            "MNDWI": 0
-        }
+        water = water.And(
+            permanent_water
+        )
 
-    return {
-        "ndwi": ndwi,
-        "mndwi": mndwi,
-        "water": water.rename("water"),
-        "edge": edge,
-        "vals": stats
-    }
+        water = (
+            water
+            .focal_max(1)
+            .focal_min(1)
+        )
 
+        water = water.updateMask(
+            water.connectedPixelCount(
+                20,
+                True
+            ).gte(20)
+        )
+
+        edge = (
+            ee.Algorithms.CannyEdgeDetector(
+                image=water,
+                threshold=0.1,
+                sigma=1
+            )
+            .selfMask()
+        )
+
+        result["water"] = water.rename("water")
+        result["edge"] = edge
+
+    return result
 
 # =========================
 # CALCULATE AREA - SAFE
@@ -447,7 +575,7 @@ def calculate_area(mask, band_name, geometry):
 
 
 # =========================
-# API GEE
+# API GEE - LIGHT MODE
 # =========================
 @app.route("/gee")
 def run_analysis():
@@ -457,9 +585,7 @@ def run_analysis():
         init_gee()
 
         province = request.args.get("province")
-
         y1 = request.args.get("y1")
-
         y2 = request.args.get("y2")
 
         if not province or not y1 or not y2:
@@ -468,222 +594,104 @@ def run_analysis():
                 "error": "Thiếu province, y1 hoặc y2"
             }), 400
 
-        if province in non_coastal:
-
-            return jsonify({
-                "error": f"Tỉnh {province} không giáp biển"
-            }), 400
-
-        selected = next(
-            (
-                d for d in coastal_data
-                if d["label"] == province
-            ),
-            None
-        )
-
-        if not selected:
-
-            return jsonify({
-                "error": f"Không tìm thấy tỉnh {province}"
-            }), 404
-
-        region = provinces_fc.filter(
-            ee.Filter.inList(
-                "ADM1_NAME",
-                selected["search"]
-            )
-        )
-
-        try:
-
-            count_region = region.size().getInfo()
-
-        except Exception as e:
-
-            print("REGION ERROR:", e)
-
-            return jsonify({
-                "error": "Không đọc được ranh giới tỉnh từ Google Earth Engine",
-                "type": type(e).__name__
-            }), 500
-
-        if count_region == 0:
-
-            return jsonify({
-                "error": f"Không tìm thấy ranh giới GEE cho {province}"
-            }), 404
-
-        aoi = (
-            region
-            .geometry()
-            .dissolve()
-        )
-
-        coastal_buffer = aoi.buffer(1000)
-
-        offshore_zone = coastal_buffer.difference(
-            aoi,
-            1
-        )
-
-        offshore_zone = offshore_zone.intersection(
-            aoi.bounds(),
-            1
+        aoi, offshore_zone = get_region_and_zone(
+            province
         )
 
         r1 = get_analysis(
             offshore_zone,
-            y1
+            y1,
+            include_heavy=False
         )
 
         r2 = get_analysis(
             offshore_zone,
-            y2
+            y2,
+            include_heavy=False
         )
 
-        erosion = (
-            r1["water"]
-            .And(
-                r2["water"].Not()
-            )
-            .rename("erosion")
-            .updateMask(
-                r1["water"].And(
-                    r2["water"].Not()
-                )
-            )
-        )
-
-        accretion = (
-            r2["water"]
-            .And(
-                r1["water"].Not()
-            )
-            .rename("accretion")
-            .updateMask(
-                r2["water"].And(
-                    r1["water"].Not()
-                )
-            )
-        )
-
-        # Render free bị timeout khi tính diện tích bằng reduceRegion/getInfo.
-        # Tạm thời set 0 để /gee trả layer bản đồ nhanh, không bị Internal Server Error.
+        # Không ghi fake erosion/accretion vào DB để tránh ảnh hưởng dữ liệu thật.
+        # Nếu cần lưu dữ liệu thật, nên lưu ở route riêng sau khi đã tính diện tích thành công.
         erosion_ha = 0
-
         accretion_ha = 0
 
-        save_data(
-            province,
-            int(y1),
-            float(r1["vals"].get("NDWI", 0) or 0),
-            float(r1["vals"].get("MNDWI", 0) or 0),
-            erosion_ha,
-            accretion_ha
-        )
-
-        try:
-
-            bounds = aoi.bounds().getInfo()["coordinates"][0]
-
-        except Exception as e:
-
-            print("BOUNDS ERROR:", e)
-
-            bounds = [
-                [108.0, 16.0],
-                [109.0, 16.0],
-                [109.0, 17.0],
-                [108.0, 17.0],
-                [108.0, 16.0]
-            ]
+        bounds = safe_bounds(aoi)
 
         result = {
+
+            "mode": "light",
+
+            "message": "Đã tải lớp cơ bản. Bấm 'Tải lớp nâng cao' để tải đường bờ, xói mòn và bồi tụ.",
 
             "layers": {
 
                 "boundary":
-                ee.Image()
-                .byte()
-                .paint(
-                    featureCollection=ee.FeatureCollection([
-                        ee.Feature(aoi)
-                    ]),
-                    color=1,
-                    width=3
-                )
-                .getMapId({
-                    "palette": ["yellow"]
-                })["tile_fetcher"].url_format,
-
-                "shoreline1":
-                r1["edge"]
-                .getMapId({
-                    "palette": ["#ff00ff"]
-                })["tile_fetcher"].url_format,
-
-                "shoreline2":
-                r2["edge"]
-                .getMapId({
-                    "palette": ["#00ffff"]
-                })["tile_fetcher"].url_format,
-
-                "erosion":
-                erosion
-                .getMapId({
-                    "palette": ["red"]
-                })["tile_fetcher"].url_format,
-
-                "accretion":
-                accretion
-                .getMapId({
-                    "palette": ["lime"]
-                })["tile_fetcher"].url_format,
+                get_map_url(
+                    ee.Image()
+                    .byte()
+                    .paint(
+                        featureCollection=ee.FeatureCollection([
+                            ee.Feature(aoi)
+                        ]),
+                        color=1,
+                        width=3
+                    ),
+                    {
+                        "palette": ["yellow"]
+                    }
+                ),
 
                 "ndwi1":
-                r1["ndwi"]
-                .getMapId({
-                    "min": -1,
-                    "max": 1,
-                    "palette": [
-                        "white",
-                        "blue"
-                    ]
-                })["tile_fetcher"].url_format,
+                get_map_url(
+                    r1["ndwi"],
+                    {
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "blue"
+                        ]
+                    }
+                ),
 
                 "ndwi2":
-                r2["ndwi"]
-                .getMapId({
-                    "min": -1,
-                    "max": 1,
-                    "palette": [
-                        "white",
-                        "blue"
-                    ]
-                })["tile_fetcher"].url_format,
+                get_map_url(
+                    r2["ndwi"],
+                    {
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "blue"
+                        ]
+                    }
+                ),
 
                 "mndwi1":
-                r1["mndwi"]
-                .getMapId({
-                    "min": -1,
-                    "max": 1,
-                    "palette": [
-                        "white",
-                        "green"
-                    ]
-                })["tile_fetcher"].url_format,
+                get_map_url(
+                    r1["mndwi"],
+                    {
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "green"
+                        ]
+                    }
+                ),
 
                 "mndwi2":
-                r2["mndwi"]
-                .getMapId({
-                    "min": -1,
-                    "max": 1,
-                    "palette": [
-                        "white",
-                        "green"
-                    ]
-                })["tile_fetcher"].url_format
+                get_map_url(
+                    r2["mndwi"],
+                    {
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "green"
+                        ]
+                    }
+                )
             },
 
             "stats": {
@@ -708,6 +716,20 @@ def run_analysis():
 
         return jsonify(result)
 
+    except ValueError as e:
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 400
+
+    except LookupError as e:
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 404
+
     except Exception as e:
 
         print(traceback.format_exc())
@@ -717,6 +739,169 @@ def run_analysis():
             "type": type(e).__name__
         }), 500
 
+
+# =========================
+# API GEE - ADVANCED SINGLE LAYER
+# =========================
+@app.route("/gee_heavy")
+def gee_heavy():
+
+    try:
+
+        init_gee()
+
+        province = request.args.get("province")
+        y1 = request.args.get("y1")
+        y2 = request.args.get("y2")
+        layer = request.args.get("layer")
+
+        allowed_layers = [
+            "shoreline1",
+            "shoreline2",
+            "erosion",
+            "accretion"
+        ]
+
+        if not province or not y1 or not y2 or not layer:
+
+            return jsonify({
+                "error": "Thiếu province, y1, y2 hoặc layer"
+            }), 400
+
+        if layer not in allowed_layers:
+
+            return jsonify({
+                "error": f"Layer không hợp lệ. Chỉ nhận: {', '.join(allowed_layers)}"
+            }), 400
+
+        cache_key = f"{province}_{y1}_{y2}_{layer}"
+
+        if cache_key in tile_cache:
+
+            return jsonify({
+                "mode": "advanced-cache",
+                "layer": layer,
+                "layers": {
+                    layer: tile_cache[cache_key]
+                }
+            })
+
+        aoi, offshore_zone = get_region_and_zone(
+            province
+        )
+
+        if layer == "shoreline1":
+
+            r1 = get_analysis(
+                offshore_zone,
+                y1,
+                include_heavy=True
+            )
+
+            url = get_map_url(
+                r1["edge"],
+                {
+                    "palette": ["#ff00ff"]
+                }
+            )
+
+        elif layer == "shoreline2":
+
+            r2 = get_analysis(
+                offshore_zone,
+                y2,
+                include_heavy=True
+            )
+
+            url = get_map_url(
+                r2["edge"],
+                {
+                    "palette": ["#00ffff"]
+                }
+            )
+
+        elif layer in ["erosion", "accretion"]:
+
+            r1 = get_analysis(
+                offshore_zone,
+                y1,
+                include_heavy=True
+            )
+
+            r2 = get_analysis(
+                offshore_zone,
+                y2,
+                include_heavy=True
+            )
+
+            erosion = (
+                r1["water"]
+                .And(
+                    r2["water"].Not()
+                )
+                .rename("erosion")
+                .selfMask()
+            )
+
+            accretion = (
+                r2["water"]
+                .And(
+                    r1["water"].Not()
+                )
+                .rename("accretion")
+                .selfMask()
+            )
+
+            if layer == "erosion":
+
+                url = get_map_url(
+                    erosion,
+                    {
+                        "palette": ["red"]
+                    }
+                )
+
+            else:
+
+                url = get_map_url(
+                    accretion,
+                    {
+                        "palette": ["lime"]
+                    }
+                )
+
+        tile_cache[cache_key] = url
+
+        return jsonify({
+            "mode": "advanced",
+            "layer": layer,
+            "layers": {
+                layer: url
+            }
+        })
+
+    except ValueError as e:
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 400
+
+    except LookupError as e:
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 404
+
+    except Exception as e:
+
+        print(traceback.format_exc())
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
 
 # =========================
 # FORECAST AI
