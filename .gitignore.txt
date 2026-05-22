@@ -1,4 +1,25 @@
+# Môi trường ảo local (đã có trong danh sách của bạn)
 venv/
+.venv/
+env/
+
+# Các tệp biên dịch của Python (đã có trong danh sách của bạn)
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Thư mục dữ liệu SQLite local (đã có trong danh sách của bạn)
+# Giúp Render không bị ghi đè database trống từ local lên mỗi khi deploy
 data/
+*.db
+*.sqlite3
+
+# FILE BẢO MẬT GEE (Cực kỳ quan trọng - Cần thêm vào)
+# Không đẩy file này lên GitHub để tránh lộ thông tin Private Key
+service_account.json
+
+# Cấu hình riêng của VS Code hoặc hệ điều hành
+.vscode/
+.DS_Store
+Thumbs.db
