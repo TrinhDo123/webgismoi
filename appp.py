@@ -161,28 +161,72 @@ def init_gee():
     if gee_ready:
         return
 
-    service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
+    info = None
 
+    # Ưu tiên dùng ENV trên Render
     if os.environ.get("GOOGLE_CREDS_JSON"):
 
-        info = json.loads(
-            os.environ["GOOGLE_CREDS_JSON"]
-        )
+        try:
+            info = json.loads(
+                os.environ["GOOGLE_CREDS_JSON"]
+            )
 
-        with open("service_account.json", "w") as f:
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "GOOGLE_CREDS_JSON không phải JSON hợp lệ. Hãy copy nguyên nội dung file JSON service account vào Render Environment."
+            ) from e
+
+        with open("service_account.json", "w", encoding="utf-8") as f:
             json.dump(info, f)
 
-    if not os.path.exists("service_account.json"):
-        raise FileNotFoundError(
-            "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
+    # Nếu chạy local thì dùng file service_account.json
+    else:
+
+        if not os.path.exists("service_account.json"):
+            raise FileNotFoundError(
+                "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
+            )
+
+        with open("service_account.json", "r", encoding="utf-8") as f:
+            info = json.load(f)
+
+    # Kiểm tra key bắt buộc
+    if not info:
+        raise ValueError(
+            "Không đọc được thông tin service account"
         )
+
+    if "client_email" not in info:
+        raise ValueError(
+            "service_account.json thiếu client_email"
+        )
+
+    if "private_key" not in info:
+        raise ValueError(
+            "service_account.json thiếu private_key"
+        )
+
+    if "project_id" not in info:
+        raise ValueError(
+            "service_account.json thiếu project_id"
+        )
+
+    service_account = info["client_email"]
+    project_id = info["project_id"]
 
     credentials = ee.ServiceAccountCredentials(
         service_account,
         "service_account.json"
     )
 
-    ee.Initialize(credentials)
+    try:
+        ee.Initialize(
+            credentials,
+            project=project_id
+        )
+
+    except TypeError:
+        ee.Initialize(credentials)
 
     provinces_fc = (
         ee.FeatureCollection(
@@ -416,20 +460,13 @@ def get_analysis(offshore_zone, year, include_heavy=False):
         .filter(
             ee.Filter.lt(
                 "CLOUD_COVER",
-                60
+                70
             )
         )
         .sort("CLOUD_COVER")
         .map(mask_l8_sr)
-        .limit(8)
+        .limit(3)
     )
-
-    count = dataset.size().getInfo()
-
-    if count == 0:
-        raise Exception(
-            f"Không có ảnh Landsat cho năm {year}. Hãy thử năm khác."
-        )
 
     img = (
         dataset
@@ -461,28 +498,6 @@ def get_analysis(offshore_zone, year, include_heavy=False):
             "MNDWI": 0
         }
     }
-
-    try:
-
-        stats = (
-            ndwi.addBands(mndwi)
-            .reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=offshore_zone,
-                scale=700,
-                bestEffort=True,
-                tileScale=16,
-                maxPixels=5e7
-            )
-            .getInfo()
-        )
-
-        if stats:
-            result["vals"] = stats
-
-    except Exception as e:
-
-        print("STATS ERROR:", e)
 
     if include_heavy:
 
@@ -607,7 +622,7 @@ def run_analysis():
 
             "mode": "light",
 
-            "message": "Đã tải lớp cơ bản. Bấm 'Tải lớp nâng cao' để tải đường bờ, xói mòn và bồi tụ.",
+            "message": "Đã tải lớp cơ bản. Bấm chọn Đường bờ / Xói mòn / Bồi tụ để tải lớp nâng cao.",
 
             "layers": {
 
