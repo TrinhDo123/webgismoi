@@ -46,6 +46,7 @@ def index():
     return render_template("index.html")
 
 
+
 # =========================
 # HEALTH ROUTE - TEST API
 # =========================
@@ -147,7 +148,6 @@ gee_ready = False
 provinces_fc = None
 gsw = None
 permanent_water = None
-ocean_mask = None
 
 tile_cache = {}
 
@@ -158,77 +158,32 @@ def init_gee():
     global provinces_fc
     global gsw
     global permanent_water
-    global ocean_mask
 
     if gee_ready:
         return
 
-    info = None
+    service_account = "gee-coastline@cach-471019.iam.gserviceaccount.com"
 
-    # Ưu tiên dùng ENV trên Render
     if os.environ.get("GOOGLE_CREDS_JSON"):
 
-        try:
-            info = json.loads(
-                os.environ["GOOGLE_CREDS_JSON"]
-            )
+        info = json.loads(
+            os.environ["GOOGLE_CREDS_JSON"]
+        )
 
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                "GOOGLE_CREDS_JSON không phải JSON hợp lệ. Hãy copy nguyên nội dung file JSON service account vào Render Environment."
-            ) from e
-
-        with open("service_account.json", "w", encoding="utf-8") as f:
+        with open("service_account.json", "w") as f:
             json.dump(info, f)
 
-    # Nếu chạy local thì dùng file service_account.json
-    else:
-
-        if not os.path.exists("service_account.json"):
-            raise FileNotFoundError(
-                "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
-            )
-
-        with open("service_account.json", "r", encoding="utf-8") as f:
-            info = json.load(f)
-
-    # Kiểm tra key bắt buộc
-    if not info:
-        raise ValueError(
-            "Không đọc được thông tin service account"
+    if not os.path.exists("service_account.json"):
+        raise FileNotFoundError(
+            "Không tìm thấy service_account.json hoặc GOOGLE_CREDS_JSON trên Render"
         )
-
-    if "client_email" not in info:
-        raise ValueError(
-            "service_account.json thiếu client_email"
-        )
-
-    if "private_key" not in info:
-        raise ValueError(
-            "service_account.json thiếu private_key"
-        )
-
-    if "project_id" not in info:
-        raise ValueError(
-            "service_account.json thiếu project_id"
-        )
-
-    service_account = info["client_email"]
-    project_id = info["project_id"]
 
     credentials = ee.ServiceAccountCredentials(
         service_account,
         "service_account.json"
     )
 
-    try:
-        ee.Initialize(
-            credentials,
-            project=project_id
-        )
-
-    except TypeError:
-        ee.Initialize(credentials)
+    ee.Initialize(credentials)
 
     provinces_fc = (
         ee.FeatureCollection(
@@ -252,15 +207,6 @@ def init_gee():
         .gt(80)
     )
 
-    # Mặt nạ biển thật: độ cao đáy biển < 0 m.
-    # Dùng để loại bỏ sông, ao hồ, đầm nuôi trong đất liền.
-    ocean_mask = (
-        ee.Image("NOAA/NGDC/ETOPO1")
-        .select("bedrock")
-        .lt(0)
-        .rename("ocean")
-    )
-
     gee_ready = True
 
 
@@ -270,31 +216,74 @@ init_db()
 
 
 # =========================
-# DATA - CHỈ GIỮ TỈNH/VÙNG GIÁP BIỂN THẬT
-# Không map tỉnh không giáp biển sang tỉnh khác.
+# DATA
 # =========================
 coastal_data = [
-    {"label": "Ca Mau", "search": ["Ca Mau"]},
+
+    {"label": "An Giang", "search": ["Kien Giang", "An Giang"]},
+    {"label": "Bac Ninh", "search": ["Bac Giang", "Bac Ninh"]},
+    {"label": "Ca Mau", "search": ["Bac Lieu", "Ca Mau"]},
+    {"label": "Cao Bang", "search": ["Cao Bang"]},
+    {"label": "Dak Lak", "search": ["Phu Yen", "Dak Lak"]},
+    {"label": "Dien Bien", "search": ["Dien Bien"]},
+    {"label": "Dong Nai", "search": ["Binh Phuoc", "Dong Nai"]},
+    {"label": "Dong Thap", "search": ["Tien Giang", "Dong Thap"]},
+    {"label": "Gia Lai", "search": ["Gia Lai", "Binh Dinh"]},
     {"label": "Ha Tinh", "search": ["Ha Tinh"]},
-    {"label": "Khanh Hoa", "search": ["Khanh Hoa"]},
+    {"label": "Hung Yen", "search": ["Thai Binh", "Hung Yen"]},
+    {"label": "Khanh Hoa", "search": ["Khanh Hoa", "Ninh Thuan"]},
+    {"label": "Lai Chau", "search": ["Lai Chau"]},
+    {"label": "Lam Dong", "search": ["Dak Nong", "Lam Dong", "Binh Thuan"]},
+    {"label": "Lang Son", "search": ["Lang Son"]},
+    {"label": "Lao Cai", "search": ["Lao Cai", "Yen Bai"]},
     {"label": "Nghe An", "search": ["Nghe An"]},
-    {"label": "Quang Ngai", "search": ["Quang Ngai"]},
+    {"label": "Ninh Binh", "search": ["Ha Nam", "Ninh Binh", "Nam Dinh"]},
+    {"label": "Phu Tho", "search": ["Hoa Binh", "Vinh Phuc", "Phu Tho"]},
+    {"label": "Quang Ngai", "search": ["Quang Ngai", "Kon Tum"]},
     {"label": "Quang Ninh", "search": ["Quang Ninh"]},
-    {"label": "Quang Tri", "search": ["Quang Tri"]},
+    {"label": "Quang Tri", "search": ["Quang Binh", "Quang Tri"]},
+    {"label": "Son La", "search": ["Son La"]},
+    {"label": "Tay Ninh", "search": ["Long An", "Tay Ninh"]},
+    {"label": "Thai Nguyen", "search": ["Bac Kan", "Thai Nguyen"]},
     {"label": "Thanh Hoa", "search": ["Thanh Hoa"]},
-    {"label": "Da Nang", "search": ["Da Nang"]},
-    {"label": "Hai Phong", "search": ["Hai Phong"]},
-    {"label": "TP Ho Chi Minh", "search": ["Ho Chi Minh"]},
-    {"label": "Hue", "search": ["Thua Thien Hue"]}
+    {"label": "Can Tho", "search": ["Soc Trang", "Hau Giang", "Can Tho"]},
+    {"label": "Da Nang", "search": ["Quang Nam", "Da Nang"]},
+    {"label": "Ha Noi", "search": ["Ha Noi"]},
+    {"label": "Hai Phong", "search": ["Hai Duong", "Hai Phong"]},
+    {"label": "TP Ho Chi Minh", "search": ["Binh Duong", "Ho Chi Minh", "Ba Ria"]},
+    {"label": "Hue", "search": ["Thua Thien Hue"]},
+    {"label": "Tuyen Quang", "search": ["Ha Giang", "Tuyen Quang"]},
+    {"label": "Vinh Long", "search": ["Ben Tre", "Vinh Long", "Tra Vinh"]}
+
 ]
 
-non_coastal = []
+
+non_coastal = [
+    "Cao Bang",
+    "Dien Bien",
+    "Lai Chau",
+    "Lang Son",
+    "Son La",
+    "Thai Nguyen",
+    "Tuyen Quang",
+    "Lao Cai",
+    "Phu Tho",
+    "Bac Ninh",
+    "Dong Nai",
+    "Tay Ninh",
+    "Ha Noi"
+]
 
 
 # =========================
 # GEE HELPERS
 # =========================
 def get_selected(province):
+
+    if province in non_coastal:
+        raise ValueError(
+            f"Tỉnh {province} không giáp biển"
+        )
 
     selected = next(
         (
@@ -305,20 +294,14 @@ def get_selected(province):
     )
 
     if not selected:
-        raise ValueError(
-            f"Tỉnh {province} không giáp biển hoặc chưa được cấu hình vùng bờ biển thật"
+        raise LookupError(
+            f"Không tìm thấy tỉnh {province}"
         )
 
     return selected
 
 
 def get_region_and_zone(province):
-    """
-    Trả về AOI đất liền và vùng tìm kiếm ven biển.
-    Không tạo buffer quanh toàn bộ ranh giới tỉnh để tránh lấy nhầm
-    đường biên trong đất liền. Việc lọc đúng bờ biển được làm bằng
-    raster ocean_mask trong get_coastal_masks().
-    """
 
     selected = get_selected(province)
 
@@ -342,97 +325,19 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    # Chỉ là vùng tìm kiếm ảnh; không dùng làm đường bờ.
-    # Dải 8 km đủ để lấy cả phần đất ven bờ và nước biển ngoài khơi.
-    search_zone = aoi.buffer(8000)
+    coastal_buffer = aoi.buffer(1000)
 
-    return aoi, search_zone
-
-
-def get_coastal_masks(aoi, search_zone):
-    """
-    Tạo mask dải ven biển thật:
-    - land_mask: đất thuộc tỉnh
-    - sea_mask: biển thật theo ETOPO1 bedrock < 0
-    - coast_strip: chỉ những pixel nằm gần cả đất của tỉnh và biển thật
-    - coast_core: lõi sát đường tiếp xúc đất/nước để vẽ shoreline
-    Cách này loại bỏ biên giới đất liền, sông, hồ, đầm nuôi tôm trong nội địa.
-    """
-
-    land_mask = (
-        ee.Image.constant(1)
-        .clip(aoi)
-        .rename("land")
-        .unmask(0)
-        .gt(0)
+    offshore_zone = coastal_buffer.difference(
+        aoi,
+        1
     )
 
-    sea_mask = (
-        ocean_mask
-        .clip(search_zone)
-        .selfMask()
+    offshore_zone = offshore_zone.intersection(
+        aoi.bounds(),
+        1
     )
 
-    near_sea_5000 = (
-        sea_mask
-        .focal_max(radius=5000, units="meters")
-        .unmask(0)
-        .gt(0)
-    )
-
-    near_land_5000 = (
-        land_mask
-        .focal_max(radius=5000, units="meters")
-        .unmask(0)
-        .gt(0)
-    )
-
-    near_sea_1800 = (
-        sea_mask
-        .focal_max(radius=1800, units="meters")
-        .unmask(0)
-        .gt(0)
-    )
-
-    near_land_1800 = (
-        land_mask
-        .focal_max(radius=1800, units="meters")
-        .unmask(0)
-        .gt(0)
-    )
-
-    coast_strip = (
-        near_sea_5000
-        .And(near_land_5000)
-        .selfMask()
-        .rename("coast_strip")
-    )
-
-    coast_core = (
-        near_sea_1800
-        .And(near_land_1800)
-        .selfMask()
-        .rename("coast_core")
-    )
-
-    coast_boundary = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=land_mask,
-            threshold=0.1,
-            sigma=1
-        )
-        .updateMask(coast_core)
-        .selfMask()
-        .rename("coast_boundary")
-    )
-
-    return {
-        "land_mask": land_mask,
-        "sea_mask": sea_mask,
-        "coast_strip": coast_strip,
-        "coast_core": coast_core,
-        "coast_boundary": coast_boundary
-    }
+    return aoi, offshore_zone
 
 
 def safe_bounds(aoi):
@@ -498,17 +403,13 @@ def mask_l8_sr(image):
 # =========================
 # GET ANALYSIS - OPTIMIZED FOR RENDER
 # =========================
-def get_analysis(search_zone, aoi, year, include_heavy=False):
-
-    masks = get_coastal_masks(aoi, search_zone)
-
-    # Dùng Landsat 8 + 9 SR để có dữ liệu ổn định giai đoạn 2015-2026.
-    l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
-    l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+def get_analysis(offshore_zone, year, include_heavy=False):
 
     dataset = (
-        l8.merge(l9)
-        .filterBounds(search_zone)
+        ee.ImageCollection(
+            "LANDSAT/LC08/C02/T1_L2"
+        )
+        .filterBounds(offshore_zone)
         .filterDate(
             f"{year}-01-01",
             f"{year}-12-31"
@@ -516,7 +417,7 @@ def get_analysis(search_zone, aoi, year, include_heavy=False):
         .filter(
             ee.Filter.lt(
                 "CLOUD_COVER",
-                50
+                60
             )
         )
         .sort("CLOUD_COVER")
@@ -524,105 +425,100 @@ def get_analysis(search_zone, aoi, year, include_heavy=False):
         .limit(8)
     )
 
+    count = dataset.size().getInfo()
+
+    if count == 0:
+        raise Exception(
+            f"Không có ảnh Landsat cho năm {year}. Hãy thử năm khác."
+        )
+
     img = (
         dataset
-        .median()
-        .clip(search_zone)
+        .first()
+        .clip(offshore_zone)
     )
 
     green = img.select("SR_B3")
     nir = img.select("SR_B5")
     swir = img.select("SR_B6")
 
-    ndwi_raw = (
+    ndwi = (
         green.subtract(nir)
         .divide(green.add(nir))
         .rename("NDWI")
     )
 
-    mndwi_raw = (
+    mndwi = (
         green.subtract(swir)
         .divide(green.add(swir))
         .rename("MNDWI")
     )
 
-    # Chỉ hiển thị NDWI/MNDWI trong dải ven biển thật.
-    ndwi = ndwi_raw.updateMask(
-        masks["coast_strip"]
-    )
-
-    mndwi = mndwi_raw.updateMask(
-        masks["coast_strip"]
-    )
-
-    # Water mask chỉ lấy nước sát biển.
-    # Không dùng toàn bộ permanent_water vì nó giữ cả sông/hồ/ao trong đất liền.
-    water = (
-        mndwi_raw
-        .gt(0.08)
-        .updateMask(masks["coast_strip"])
-        .focal_max(radius=60, units="meters")
-        .focal_min(radius=60, units="meters")
-    )
-
-    water = water.updateMask(
-        water.connectedPixelCount(
-            80,
-            True
-        ).gte(80)
-    ).rename("water")
-
-    # Đường bờ là biên của nước, nhưng bị mask trong lõi tiếp xúc đất-biển
-    # để không vẽ đường trong nội địa.
-    edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=water,
-            threshold=0.1,
-            sigma=1.5
-        )
-        .updateMask(
-            masks["coast_core"]
-            .focal_max(radius=800, units="meters")
-        )
-        .focal_max(radius=30, units="meters")
-        .selfMask()
-        .rename("shoreline")
-    )
-
-    vals = {
-        "NDWI": 0,
-        "MNDWI": 0
+    result = {
+        "ndwi": ndwi,
+        "mndwi": mndwi,
+        "vals": {
+            "NDWI": 0,
+            "MNDWI": 0
+        }
     }
 
     try:
+
         stats = (
             ndwi.addBands(mndwi)
             .reduceRegion(
                 reducer=ee.Reducer.mean(),
-                geometry=search_zone,
-                scale=500,
+                geometry=offshore_zone,
+                scale=700,
                 bestEffort=True,
-                tileScale=8,
-                maxPixels=1e8
+                tileScale=16,
+                maxPixels=5e7
             )
             .getInfo()
         )
 
         if stats:
-            vals = stats
+            result["vals"] = stats
 
     except Exception as e:
+
         print("STATS ERROR:", e)
 
-    return {
-        "ndwi": ndwi,
-        "mndwi": mndwi,
-        "water": water,
-        "edge": edge,
-        "coast_boundary": masks["coast_boundary"],
-        "coast_strip": masks["coast_strip"],
-        "vals": vals
-    }
+    if include_heavy:
+
+        water = mndwi.gt(0.12)
+
+        water = water.And(
+            permanent_water
+        )
+
+        water = (
+            water
+            .focal_max(1)
+            .focal_min(1)
+        )
+
+        water = water.updateMask(
+            water.connectedPixelCount(
+                20,
+                True
+            ).gte(20)
+        )
+
+        edge = (
+            ee.Algorithms.CannyEdgeDetector(
+                image=water,
+                threshold=0.1,
+                sigma=1
+            )
+            .selfMask()
+        )
+
+        result["water"] = water.rename("water")
+        result["edge"] = edge
+
+    return result
 
 
 # =========================
@@ -687,76 +583,46 @@ def run_analysis():
                 "error": "Thiếu province, y1 hoặc y2"
             }), 400
 
-        aoi, search_zone = get_region_and_zone(
+        aoi, offshore_zone = get_region_and_zone(
             province
         )
 
         r1 = get_analysis(
-            search_zone,
-            aoi,
+            offshore_zone,
             y1,
             include_heavy=False
         )
 
         r2 = get_analysis(
-            search_zone,
-            aoi,
+            offshore_zone,
             y2,
             include_heavy=False
         )
 
-        erosion = (
-            r1["water"]
-            .And(
-                r2["water"].Not()
-            )
-            .rename("erosion")
-            .selfMask()
-        )
+        erosion_ha = 0
+        accretion_ha = 0
 
-        accretion = (
-            r2["water"]
-            .And(
-                r1["water"].Not()
-            )
-            .rename("accretion")
-            .selfMask()
-        )
-
-        erosion_ha = calculate_area(
-            erosion,
-            "erosion",
-            search_zone
-        )
-
-        accretion_ha = calculate_area(
-            accretion,
-            "accretion",
-            search_zone
-        )
-
-        save_data(
-            province,
-            int(y2),
-            float(r2["vals"].get("NDWI", 0) or 0),
-            float(r2["vals"].get("MNDWI", 0) or 0),
-            erosion_ha,
-            accretion_ha
-        )
-
-        bounds = safe_bounds(search_zone)
+        bounds = safe_bounds(aoi)
 
         result = {
 
-            "mode": "true-coast",
+            "mode": "light",
 
-            "message": "Đã tải đúng dải ven biển: NDWI/MNDWI chỉ hiển thị quanh tiếp xúc đất - biển, không lấy biên trong đất liền.",
+            "message": "Đã tải lớp cơ bản. Bấm 'Tải lớp nâng cao' để tải đường bờ, xói mòn và bồi tụ.",
 
             "layers": {
 
                 "boundary":
                 get_map_url(
-                    r1["coast_boundary"],
+                    ee.Image()
+                    .byte()
+                    .paint(
+                        featureCollection=ee.FeatureCollection([
+                            ee.Feature(aoi)
+                        ]),
+                        color=1,
+                        width=3
+                    ),
                     {
                         "palette": ["yellow"]
                     }
@@ -766,13 +632,10 @@ def run_analysis():
                 get_map_url(
                     r1["ndwi"],
                     {
-                        "min": -0.5,
-                        "max": 0.5,
+                        "min": -1,
+                        "max": 1,
                         "palette": [
-                            "brown",
-                            "yellow",
-                            "green",
-                            "cyan",
+                            "white",
                             "blue"
                         ]
                     }
@@ -782,13 +645,10 @@ def run_analysis():
                 get_map_url(
                     r2["ndwi"],
                     {
-                        "min": -0.5,
-                        "max": 0.5,
+                        "min": -1,
+                        "max": 1,
                         "palette": [
-                            "brown",
-                            "yellow",
-                            "green",
-                            "cyan",
+                            "white",
                             "blue"
                         ]
                     }
@@ -798,14 +658,11 @@ def run_analysis():
                 get_map_url(
                     r1["mndwi"],
                     {
-                        "min": -0.5,
-                        "max": 0.5,
+                        "min": -1,
+                        "max": 1,
                         "palette": [
-                            "purple",
-                            "black",
                             "white",
-                            "cyan",
-                            "blue"
+                            "green"
                         ]
                     }
                 ),
@@ -814,14 +671,11 @@ def run_analysis():
                 get_map_url(
                     r2["mndwi"],
                     {
-                        "min": -0.5,
-                        "max": 0.5,
+                        "min": -1,
+                        "max": 1,
                         "palette": [
-                            "purple",
-                            "black",
                             "white",
-                            "cyan",
-                            "blue"
+                            "green"
                         ]
                     }
                 )
@@ -907,7 +761,7 @@ def gee_heavy():
                 "error": f"Layer không hợp lệ. Chỉ nhận: {', '.join(allowed_layers)}"
             }), 400
 
-        cache_key = f"{province}_{y1}_{y2}_{layer}_true_coast"
+        cache_key = f"{province}_{y1}_{y2}_{layer}"
 
         if cache_key in tile_cache:
 
@@ -919,15 +773,14 @@ def gee_heavy():
                 }
             })
 
-        aoi, search_zone = get_region_and_zone(
+        aoi, offshore_zone = get_region_and_zone(
             province
         )
 
         if layer == "shoreline1":
 
             r1 = get_analysis(
-                search_zone,
-                aoi,
+                offshore_zone,
                 y1,
                 include_heavy=True
             )
@@ -942,8 +795,7 @@ def gee_heavy():
         elif layer == "shoreline2":
 
             r2 = get_analysis(
-                search_zone,
-                aoi,
+                offshore_zone,
                 y2,
                 include_heavy=True
             )
@@ -958,15 +810,13 @@ def gee_heavy():
         elif layer in ["erosion", "accretion"]:
 
             r1 = get_analysis(
-                search_zone,
-                aoi,
+                offshore_zone,
                 y1,
                 include_heavy=True
             )
 
             r2 = get_analysis(
-                search_zone,
-                aoi,
+                offshore_zone,
                 y2,
                 include_heavy=True
             )
