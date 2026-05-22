@@ -55,44 +55,12 @@ CORS(app, resources={
     }
 })
 
+# LƯU Ý: Xóa bỏ khối định nghĩa "def init_db():" cũ ở phía dưới để tránh trùng lặp code
 # Các phần code phía dưới (save_data, INIT GEE, các Route...) giữ nguyên không thay đổi
 # SAVE DATA
 # =========================
 # INIT DATABASE
 # =========================
-def init_db():
-
-    conn = sqlite3.connect(
-        'data/coastal.db'
-    )
-
-    cursor = conn.cursor()
-
-    cursor.execute('''
-
-    CREATE TABLE IF NOT EXISTS coastal_analysis(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        province TEXT,
-
-        year INTEGER,
-
-        ndwi REAL,
-
-        mndwi REAL,
-
-        erosion REAL,
-
-        accretion REAL
-
-    )
-
-    ''')
-
-    conn.commit()
-
-    conn.close()
 # =========================
 # =========================
 # SAVE DATA
