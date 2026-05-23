@@ -274,7 +274,7 @@ init_db()
 # =========================
 coastal_data = [
 
-    {"label": "An Giang", "search": ["Kien Giang", "An Giang"]},
+    {"label": "An Giang", "search": ["Kien Giang", "An Giang"], "coast": ["Kien Giang"]},
     {"label": "Bac Ninh", "search": ["Bac Giang", "Bac Ninh"]},
     {"label": "Ca Mau", "search": ["Bac Lieu", "Ca Mau"]},
     {"label": "Cao Bang", "search": ["Cao Bang"]},
@@ -353,6 +353,7 @@ def get_region_and_zone(province):
 
     selected = get_selected(province)
 
+    # Vùng đầy đủ: dùng cho ranh giới, NDWI, MNDWI
     region = provinces_fc.filter(
         ee.Filter.inList(
             "ADM1_NAME",
@@ -373,22 +374,49 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    # Buffer 2 km quanh tỉnh/vùng gộp
-    coastal_buffer = aoi.buffer(2000)
+    # Vùng có biển thật: dùng riêng cho đường bờ, xói mòn, bồi tụ
+    coast_names = selected.get(
+        "coast",
+        selected["search"]
+    )
 
-    # Chỉ lấy vùng ngoài đất liền, sát biển
+    coast_region = provinces_fc.filter(
+        ee.Filter.inList(
+            "ADM1_NAME",
+            coast_names
+        )
+    )
+
+    count_coast = coast_region.size().getInfo()
+
+    if count_coast == 0:
+        raise LookupError(
+            f"Không tìm thấy vùng ven biển cho {province}"
+        )
+
+    coast_aoi = (
+        coast_region
+        .geometry()
+        .dissolve()
+    )
+
+    # Vùng ngoài biển sát tỉnh ven biển
+    coastal_buffer = coast_aoi.buffer(3000)
+
     offshore_zone = (
         coastal_buffer
-        .difference(aoi, 1)
+        .difference(coast_aoi, 1)
         .intersection(
-            aoi.bounds(),
+            coast_aoi.bounds(),
             1
         )
     )
 
-    return aoi, offshore_zone
-
-
+    # Trả 3 vùng:
+    # aoi = ranh giới toàn vùng nghiên cứu
+    # aoi = vùng tính NDWI/MNDWI để hiện giống ranh giới
+    # offshore_zone = vùng biển ngoài bờ để lấy đường bờ/xói mòn/bồi tụ
+    return aoi, aoi, offshore_zone
 def safe_bounds(aoi):
 
     try:
@@ -631,35 +659,49 @@ def run_analysis():
                 "error": "Thiếu province, y1 hoặc y2"
             }), 400
 
-        aoi, offshore_zone = get_region_and_zone(
+        aoi, index_zone, offshore_zone = get_region_and_zone(
             province
         )
 
+# NDWI/MNDWI tính theo toàn vùng ranh giới để hiển thị giống ranh giới tỉnh
         r1 = get_analysis(
+            index_zone,
+            y1,
+            include_heavy=False
+        )
+
+        r2 = get_analysis(
+            index_zone,
+            y2,
+            include_heavy=False
+        )
+
+        # Đường bờ/xói mòn/bồi tụ chỉ tính ngoài biển
+        h1 = get_analysis(
             offshore_zone,
             y1,
             include_heavy=True
         )
 
-        r2 = get_analysis(
+        h2 = get_analysis(
             offshore_zone,
             y2,
             include_heavy=True
         )
 
         erosion = (
-            r1["water"]
+            h1["water"]
             .And(
-                r2["water"].Not()
+                h2["water"].Not()
             )
             .rename("erosion")
             .selfMask()
         )
 
         accretion = (
-            r2["water"]
+            h2["water"]
             .And(
-                r1["water"].Not()
+                h1["water"].Not()
             )
             .rename("accretion")
             .selfMask()
@@ -857,10 +899,9 @@ def gee_heavy():
                 }
             })
 
-        aoi, offshore_zone = get_region_and_zone(
-            province
-        )
-
+        aoi, index_zone, offshore_zone = get_region_and_zone(
+    province
+)
         if layer == "shoreline1":
 
             r1 = get_analysis(offshore_zone, y1, include_heavy=True)
