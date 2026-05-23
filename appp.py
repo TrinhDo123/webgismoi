@@ -578,9 +578,44 @@ def get_analysis(offshore_zone, year, include_heavy=False):
     except Exception as e:
         print("STATS ERROR:", e)
 
+   # Tạo lớp hiển thị NDWI/MNDWI dạng viền, không tô toàn bộ tỉnh
+    ndwi_mask = (
+        ndwi
+        .gt(0)
+        .selfMask()
+    )
+
+    mndwi_mask = (
+        mndwi
+        .gt(0)
+        .selfMask()
+    )
+
+    ndwi_edge = (
+        ee.Algorithms.CannyEdgeDetector(
+            image=ndwi_mask,
+            threshold=0.1,
+            sigma=1
+        )
+        .focal_max(1)
+        .selfMask()
+    )
+
+    mndwi_edge = (
+        ee.Algorithms.CannyEdgeDetector(
+            image=mndwi_mask,
+            threshold=0.1,
+            sigma=1
+        )
+        .focal_max(1)
+        .selfMask()
+    )
+
     result = {
         "ndwi": ndwi,
         "mndwi": mndwi,
+        "ndwi_display": ndwi_edge.rename("ndwi_display"),
+        "mndwi_display": mndwi_edge.rename("mndwi_display"),
         "vals": vals
     }
 
@@ -783,53 +818,33 @@ def run_analysis():
 
                 "ndwi1":
                 get_map_url(
-                    r1["ndwi"],
+                    r1["ndwi_display"],
                     {
-                        "min": -1,
-                        "max": 1,
-                        "palette": [
-                            "white",
-                            "blue"
-                        ]
+                        "palette": ["#9b5cff"]
                     }
                 ),
 
                 "ndwi2":
                 get_map_url(
-                    r2["ndwi"],
+                    r2["ndwi_display"],
                     {
-                        "min": -1,
-                        "max": 1,
-                        "palette": [
-                            "white",
-                            "blue"
-                        ]
+                        "palette": ["#00c8ff"]
                     }
                 ),
 
                 "mndwi1":
                 get_map_url(
-                    r1["mndwi"],
+                    r1["mndwi_display"],
                     {
-                        "min": -1,
-                        "max": 1,
-                        "palette": [
-                            "white",
-                            "green"
-                        ]
+                        "palette": ["#22c55e"]
                     }
                 ),
 
                 "mndwi2":
                 get_map_url(
-                    r2["mndwi"],
+                    r2["mndwi_display"],
                     {
-                        "min": -1,
-                        "max": 1,
-                        "palette": [
-                            "white",
-                            "green"
-                        ]
+                        "palette": ["#16a34a"]
                     }
                 )
             },
@@ -1208,6 +1223,19 @@ Yêu cầu bắt buộc:
 - Không viết báo cáo dài nếu người dùng chỉ hỏi ngắn.
 - Nếu câu hỏi hỏi "ở đâu", chỉ trả lời vị trí/khu vực.
 - Nếu câu hỏi hỏi "vì sao", chỉ giải thích nguyên nhân.
+- Nếu câu hỏi hỏi "xu hướng", chỉ phân tích xu hướng.
+- Nếu câu hỏi hỏi "so sánh", chỉ tập trung so sánh.
+- Nếu câu hỏi hỏi "dự báo", chỉ tập trung vào dự báo.
+- Nếu câu hỏi hỏi "khuyến nghị", chỉ tập trung vào khuyến nghị.
+- Nếu câu hỏi hỏi "NDWI/MNDWI", chỉ tập trung vào phân tích NDWI/MNDWI.
+- Nếu câu hỏi hỏi "biến động", chỉ tập trung vào phân tích biến động.
+- Nếu câu hỏi hỏi "điều kiện", chỉ tập trung vào phân tích điều kiện hiện tại.
+- Nếu câu hỏi hỏi "giải pháp", chỉ tập trung vào đề xuất giải pháp.
+- Nếu câu hỏi hỏi "thực địa", chỉ tập trung vào khuyến nghị thực địa.
+- Nếu câu hỏi hỏi "theo dõi", chỉ tập trung vào khuyến nghị theo dõi.
+- Nếu câu hỏi hỏi "cảnh báo", chỉ tập trung vào khuyến nghị cảnh báo.
+- Nếu câu hỏi hỏi "xói mòn/bồi tụ", chỉ tập trung vào phân tích xói mòn và bồi tụ.
+- Nếu câu hỏi hỏi "ảnh hưởng", chỉ tập trung vào phân tích ảnh hưởng.
 - Nếu câu hỏi hỏi "xói mòn", chỉ tập trung vào xói mòn.
 - Nếu câu hỏi hỏi "bồi tụ", chỉ tập trung vào bồi tụ.
 - Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng.
