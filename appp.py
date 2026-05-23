@@ -586,7 +586,8 @@ def get_analysis(offshore_zone, year, include_heavy=False):
 
     if include_heavy:
 
-    # Chỉ giữ nước thật, hạn chế lấy ruộng, ao, hồ, sông/rạch nhỏ trong đất liền
+        # Chỉ giữ nước thật ngoài biển.
+        # Hạn chế lấy ruộng, ao, hồ, sông/rạch nhỏ trong đất liền.
         water = (
             mndwi
             .gt(0.10)
@@ -595,32 +596,32 @@ def get_analysis(offshore_zone, year, include_heavy=False):
             )
         )
 
-    water = (
-        water
-        .focal_max(1)
-        .focal_min(1)
-        .focal_mode(1)
-    )
-
-    water = water.updateMask(
-        water.connectedPixelCount(
-            150,
-            True
-        ).gte(150)
-    )
-
-    edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=water,
-            threshold=0.08,
-            sigma=1.8
+        water = (
+            water
+            .focal_max(1)
+            .focal_min(1)
+            .focal_mode(1)
         )
-        .focal_max(1)
-        .selfMask()
-    )
 
-    result["water"] = water.rename("water")
-    result["edge"] = edge.rename("shoreline")
+        water = water.updateMask(
+            water.connectedPixelCount(
+                150,
+                True
+            ).gte(150)
+        )
+
+        edge = (
+            ee.Algorithms.CannyEdgeDetector(
+                image=water,
+                threshold=0.08,
+                sigma=1.8
+            )
+            .focal_max(1)
+            .selfMask()
+        )
+
+        result["water"] = water.rename("water")
+        result["edge"] = edge.rename("shoreline")
 
     return result
 
