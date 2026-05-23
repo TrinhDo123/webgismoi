@@ -578,11 +578,11 @@ def get_analysis(offshore_zone, year, include_heavy=False):
     except Exception as e:
         print("STATS ERROR:", e)
 
-        result = {
-            "ndwi": ndwi,
-            "mndwi": mndwi,
-            "vals": vals
-        }
+    result = {
+        "ndwi": ndwi,
+        "mndwi": mndwi,
+        "vals": vals
+    }
 
     if include_heavy:
 
