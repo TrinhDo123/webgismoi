@@ -353,7 +353,7 @@ def get_region_and_zone(province):
 
     selected = get_selected(province)
 
-    # Vùng đầy đủ: dùng cho ranh giới, NDWI, MNDWI
+    # 1. Vùng đầy đủ: dùng để vẽ ranh giới tỉnh/vùng nghiên cứu
     region = provinces_fc.filter(
         ee.Filter.inList(
             "ADM1_NAME",
@@ -374,7 +374,18 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    # Vùng có biển thật: dùng riêng cho đường bờ, xói mòn, bồi tụ
+    # 2. NDWI/MNDWI chỉ hiện thành dải quanh ranh giới, không phủ toàn tỉnh
+    index_zone = (
+        aoi
+        .boundary()
+        .buffer(3000)
+        .intersection(
+            aoi,
+            1
+        )
+    )
+
+    # 3. Vùng thật sự có biển: dùng riêng cho đường bờ/xói mòn/bồi tụ
     coast_names = selected.get(
         "coast",
         selected["search"]
@@ -400,23 +411,28 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    # Vùng ngoài biển sát tỉnh ven biển
-    coastal_buffer = coast_aoi.buffer(3000)
+    # Toàn bộ phần đất Việt Nam để loại bỏ đất liền
+    vietnam_land = (
+        provinces_fc
+        .geometry()
+        .dissolve()
+    )
 
+    # Chỉ lấy vùng ngoài biển, sát vùng ven biển
     offshore_zone = (
-        coastal_buffer
-        .difference(coast_aoi, 1)
+        coast_aoi
+        .buffer(5000)
+        .difference(
+            vietnam_land,
+            1
+        )
         .intersection(
             coast_aoi.bounds(),
             1
         )
     )
 
-    # Trả 3 vùng:
-    # aoi = ranh giới toàn vùng nghiên cứu
-    # aoi = vùng tính NDWI/MNDWI để hiện giống ranh giới
-    # offshore_zone = vùng biển ngoài bờ để lấy đường bờ/xói mòn/bồi tụ
-    return aoi, aoi, offshore_zone
+    return aoi, index_zone, offshore_zone
 def safe_bounds(aoi):
 
     try:
@@ -563,38 +579,41 @@ def get_analysis(offshore_zone, year, include_heavy=False):
 
     if include_heavy:
 
-        # Mask nước ven biển.
-        # Không dùng quá chặt để tránh mất dữ liệu bồi tụ/xói mòn.
-        water = mndwi.gt(0.05)
-
-        # Lọc nhiễu nhỏ, làm đường bờ mượt hơn
+    # Chỉ giữ nước thật, hạn chế lấy ruộng, ao, hồ, sông/rạch nhỏ trong đất liền
         water = (
-            water
-            .focal_max(1)
-            .focal_min(1)
-            .focal_mode(1)
-        )
-
-        # Giữ các mảng nước đủ lớn, bỏ kênh/rạch nhỏ
-        water = water.updateMask(
-            water.connectedPixelCount(
-                80,
-                True
-            ).gte(80)
-        )
-
-        edge = (
-            ee.Algorithms.CannyEdgeDetector(
-                image=water,
-                threshold=0.05,
-                sigma=1.5
+            mndwi
+            .gt(0.10)
+            .And(
+                permanent_water
             )
-            .focal_max(1)
-            .selfMask()
         )
 
-        result["water"] = water.rename("water")
-        result["edge"] = edge.rename("shoreline")
+    water = (
+        water
+        .focal_max(1)
+        .focal_min(1)
+        .focal_mode(1)
+    )
+
+    water = water.updateMask(
+        water.connectedPixelCount(
+            150,
+            True
+        ).gte(150)
+    )
+
+    edge = (
+        ee.Algorithms.CannyEdgeDetector(
+            image=water,
+            threshold=0.08,
+            sigma=1.8
+        )
+        .focal_max(1)
+        .selfMask()
+    )
+
+    result["water"] = water.rename("water")
+    result["edge"] = edge.rename("shoreline")
 
     return result
 
