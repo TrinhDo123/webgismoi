@@ -375,15 +375,22 @@ def get_region_and_zone(province):
     )
 
     # 2. NDWI/MNDWI chỉ hiện thành dải quanh ranh giới, không phủ toàn tỉnh
+    # NDWI/MNDWI chỉ hiện thành dải quanh mép ranh giới, không phủ toàn bộ tỉnh
+    outer_band = aoi.buffer(3000)
+
+    inner_band = aoi.buffer(-3000)
+
     index_zone = (
-        aoi
-        .boundary()
-        .buffer(3000)
-        .intersection(
-            aoi,
-            1
+            outer_band
+            .difference(
+                inner_band,
+                1
+            )
+            .intersection(
+                aoi,
+                1
+            )
         )
-    )
 
     # 3. Vùng thật sự có biển: dùng riêng cho đường bờ/xói mòn/bồi tụ
     coast_names = selected.get(
