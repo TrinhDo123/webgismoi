@@ -791,7 +791,19 @@ def run_analysis():
     )
 
         bounds = safe_bounds(aoi)
-
+# Ảnh viền toàn bộ tỉnh để dùng cho boundary / NDWI / MNDWI
+        province_outline = (
+            ee.Image()
+            .byte()
+            .paint(
+                featureCollection=ee.FeatureCollection([
+                    ee.Feature(aoi)
+                ]),
+                color=1,
+                width=3
+            )
+            .selfMask()
+        )
         result = {
 
             "mode": "light",
@@ -802,15 +814,7 @@ def run_analysis():
 
                 "boundary":
                 get_map_url(
-                    ee.Image()
-                    .byte()
-                    .paint(
-                        featureCollection=ee.FeatureCollection([
-                            ee.Feature(aoi)
-                        ]),
-                        color=1,
-                        width=3
-                    ),
+                    province_outline,
                     {
                         "palette": ["yellow"]
                     }
@@ -818,33 +822,33 @@ def run_analysis():
 
                 "ndwi1":
                 get_map_url(
-                    r1["ndwi_display"],
+                    province_outline,
                     {
-                        "palette": ["#9b5cff"]
+                        "palette": ["#00ff66"]   # xanh lá năm 1
                     }
                 ),
 
                 "ndwi2":
                 get_map_url(
-                    r2["ndwi_display"],
+                    province_outline,
                     {
-                        "palette": ["#00c8ff"]
+                        "palette": ["#00e5ff"]   # xanh cyan năm 2
                     }
                 ),
 
                 "mndwi1":
                 get_map_url(
-                    r1["mndwi_display"],
+                    province_outline,
                     {
-                        "palette": ["#22c55e"]
+                        "palette": ["#ff00ff"]   # tím năm 1
                     }
                 ),
 
                 "mndwi2":
                 get_map_url(
-                    r2["mndwi_display"],
+                    province_outline,
                     {
-                        "palette": ["#16a34a"]
+                        "palette": ["#2962ff"]   # xanh dương năm 2
                     }
                 )
             },
