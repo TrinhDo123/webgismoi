@@ -373,16 +373,17 @@ def get_region_and_zone(province):
         .dissolve()
     )
 
-    coastal_buffer = aoi.buffer(1000)
+    # Buffer 2 km quanh tỉnh/vùng gộp
+    coastal_buffer = aoi.buffer(2000)
 
-    offshore_zone = coastal_buffer.difference(
-        aoi,
-        1
-    )
-
-    offshore_zone = offshore_zone.intersection(
-        aoi.bounds(),
-        1
+    # Chỉ lấy vùng ngoài đất liền, sát biển
+    offshore_zone = (
+        coastal_buffer
+        .difference(aoi, 1)
+        .intersection(
+            aoi.bounds(),
+            1
+        )
     )
 
     return aoi, offshore_zone
@@ -454,9 +455,7 @@ def mask_l8_sr(image):
 def get_analysis(offshore_zone, year, include_heavy=False):
 
     dataset = (
-        ee.ImageCollection(
-            "LANDSAT/LC08/C02/T1_L2"
-        )
+        ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
         .filterBounds(offshore_zone)
         .filterDate(
             f"{year}-01-01",
@@ -470,12 +469,19 @@ def get_analysis(offshore_zone, year, include_heavy=False):
         )
         .sort("CLOUD_COVER")
         .map(mask_l8_sr)
-        .limit(3)
+        .limit(6)
     )
+
+    count = dataset.size().getInfo()
+
+    if count == 0:
+        raise Exception(
+            f"Không có ảnh Landsat cho năm {year}. Hãy thử năm khác."
+        )
 
     img = (
         dataset
-        .first()
+        .median()
         .clip(offshore_zone)
     )
 
@@ -495,54 +501,77 @@ def get_analysis(offshore_zone, year, include_heavy=False):
         .rename("MNDWI")
     )
 
+    vals = {
+        "NDWI": 0,
+        "MNDWI": 0
+    }
+
+    try:
+        stats = (
+            ndwi.addBands(mndwi)
+            .reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=offshore_zone,
+                scale=300,
+                bestEffort=True,
+                tileScale=16,
+                maxPixels=1e8
+            )
+            .getInfo()
+        )
+
+        if stats:
+            vals["NDWI"] = float(stats.get("NDWI", 0) or 0)
+            vals["MNDWI"] = float(stats.get("MNDWI", 0) or 0)
+
+    except Exception as e:
+        print("STATS ERROR:", e)
+
     result = {
         "ndwi": ndwi,
         "mndwi": mndwi,
-        "vals": {
-            "NDWI": 0,
-            "MNDWI": 0
-        }
+        "vals": vals
     }
 
     if include_heavy:
 
-        water = mndwi.gt(0.12)
+        # Mask nước ven biển.
+        # Không dùng quá chặt để tránh mất dữ liệu bồi tụ/xói mòn.
+        water = mndwi.gt(0.05)
 
-        water = water.And(
-            permanent_water
-        )
-
+        # Lọc nhiễu nhỏ, làm đường bờ mượt hơn
         water = (
             water
             .focal_max(1)
             .focal_min(1)
+            .focal_mode(1)
         )
 
+        # Giữ các mảng nước đủ lớn, bỏ kênh/rạch nhỏ
         water = water.updateMask(
             water.connectedPixelCount(
-                20,
+                80,
                 True
-            ).gte(20)
+            ).gte(80)
         )
 
         edge = (
             ee.Algorithms.CannyEdgeDetector(
                 image=water,
-                threshold=0.1,
-                sigma=1
+                threshold=0.05,
+                sigma=1.5
             )
+            .focal_max(1)
             .selfMask()
         )
 
         result["water"] = water.rename("water")
-        result["edge"] = edge
+        result["edge"] = edge.rename("shoreline")
 
     return result
 
 
-# =========================
-# CALCULATE AREA - SAFE
-# =========================
+
 def calculate_area(mask, band_name, geometry):
 
     try:
@@ -609,17 +638,53 @@ def run_analysis():
         r1 = get_analysis(
             offshore_zone,
             y1,
-            include_heavy=False
+            include_heavy=True
         )
 
         r2 = get_analysis(
             offshore_zone,
             y2,
-            include_heavy=False
+            include_heavy=True
         )
 
-        erosion_ha = 0
-        accretion_ha = 0
+        erosion = (
+            r1["water"]
+            .And(
+                r2["water"].Not()
+            )
+            .rename("erosion")
+            .selfMask()
+        )
+
+        accretion = (
+            r2["water"]
+            .And(
+                r1["water"].Not()
+            )
+            .rename("accretion")
+            .selfMask()
+        )
+
+        erosion_ha = calculate_area(
+            erosion,
+            "erosion",
+            offshore_zone
+        )
+
+        accretion_ha = calculate_area(
+            accretion,
+            "accretion",
+            offshore_zone
+        )
+
+        save_data(
+            province,
+            int(y2),
+            float(r2["vals"].get("NDWI", 0) or 0),
+            float(r2["vals"].get("MNDWI", 0) or 0),
+            erosion_ha,
+            accretion_ha
+    )
 
         bounds = safe_bounds(aoi)
 
@@ -798,11 +863,7 @@ def gee_heavy():
 
         if layer == "shoreline1":
 
-            r1 = get_analysis(
-                offshore_zone,
-                y1,
-                include_heavy=True
-            )
+            r1 = get_analysis(offshore_zone, y1, include_heavy=True)
 
             url = get_map_url(
                 r1["edge"],
@@ -813,11 +874,8 @@ def gee_heavy():
 
         elif layer == "shoreline2":
 
-            r2 = get_analysis(
-                offshore_zone,
-                y2,
-                include_heavy=True
-            )
+            r2 = get_analysis(offshore_zone, y2, include_heavy=True)
+
 
             url = get_map_url(
                 r2["edge"],
@@ -840,23 +898,9 @@ def gee_heavy():
                 include_heavy=True
             )
 
-            erosion = (
-                r1["water"]
-                .And(
-                    r2["water"].Not()
-                )
-                .rename("erosion")
-                .selfMask()
-            )
+            erosion = r1["water"].And(r2["water"].Not()).selfMask()
 
-            accretion = (
-                r2["water"]
-                .And(
-                    r1["water"].Not()
-                )
-                .rename("accretion")
-                .selfMask()
-            )
+            accretion = r2["water"].And(r1["water"].Not()).selfMask()
 
             if layer == "erosion":
 

@@ -75,12 +75,7 @@ let resData = null;
 let chart1 = null;
 let chart2 = null;
 
-const heavyLayers = [
-    "shoreline1",
-    "shoreline2",
-    "erosion",
-    "accretion"
-];
+const heavyLayers = ["shoreline1","shoreline2","erosion","accretion"];
 
 function buildLayerUI() {
 
@@ -117,32 +112,18 @@ function buildLayerUI() {
     });
 }
 
-async function toggleLayer(id) {
-
+async function toggleLayer(id){
     const chk = document.getElementById("chk_" + id);
-
-    if (!chk) return;
-
-    const checked = chk.checked;
-
-    if (!checked) {
-        if (layers[id] && map.hasLayer(layers[id])) {
-            map.removeLayer(layers[id]);
-        }
-
+    if(!chk) return;
+    if(!chk.checked){
+        if(layers[id] && map.hasLayer(layers[id])) map.removeLayer(layers[id]);
         return;
     }
-
-    if (layers[id]) {
-        layers[id].addTo(map);
-        return;
-    }
-
-    if (heavyLayers.includes(id)) {
-        await loadHeavyLayer(id);
-        return;
-    }
+    if(layers[id]){layers[id].addTo(map); return;}
+    if(heavyLayers.includes(id)) await loadHeavyLayer(id);
 }
+
+
 
 async function loadHeavyLayer(layerId) {
 
@@ -210,67 +191,76 @@ async function loadHeavyLayer(layerId) {
         alert(err.message || "Lỗi tải lớp nâng cao");
     }
 }
+async function fetchJSON(url, options = {}) {
+    const response = await fetch(url, options);
+    const text = await response.text();
 
-async function startAnalysis() {
-
-    const btn = document.getElementById("btnStart");
-
-    btn.innerHTML = "⌛ ĐANG XỬ LÝ...";
-    btn.disabled = true;
-
-    buildLayerUI();
+    let data;
 
     try {
-
-        const province = encodeURIComponent(
-            provinceSelect.value
+        data = JSON.parse(text);
+    } catch (e) {
+        throw new Error(
+            "Server không trả về JSON. HTTP " +
+            response.status +
+            ". Nội dung đầu: " +
+            text.slice(0, 160)
         );
+    }
 
+    if (!response.ok) {
+        throw new Error(
+            data.error || `HTTP ${response.status}`
+        );
+    }
+
+    return data;
+}
+
+function clearMapLayers() {
+    Object.values(layers).forEach(layer => {
+        if (map.hasLayer(layer)) {
+            map.removeLayer(layer);
+        }
+    });
+
+    layers = {};
+}
+    async function startAnalysis() {
+        const btn = document.getElementById("btnStart");
+
+        btn.innerHTML = "⌛ ĐANG XỬ LÝ...";
+        btn.disabled = true;
+
+        buildLayerUI();
+        clearMapLayers();
+
+    try {
+        const province = encodeURIComponent(provinceSelect.value);
         const y1 = y1Select.value;
-        const y2 = y2Select.value;
-
+    const y2 = y2Select.value;
         const url = `${API_URL}?province=${province}&y1=${y1}&y2=${y2}`;
 
         console.log("API URL:", url);
 
-        const response = await fetch(url);
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.error || "Flask lỗi"
-            );
-        }
-
+        const data = await fetchJSON(url);
         resData = data;
 
-        Object.values(layers).forEach(layer => {
-            if (map.hasLayer(layer)) {
-                map.removeLayer(layer);
-            }
-        });
+        if (!resData.layers) {
+            throw new Error("API không trả về layers.");
+        }
 
-        layers = {};
+            for (let k in resData.layers) {
+                layers[k] = L.tileLayer(
+                    resData.layers[k],
+                    {
+                        opacity: 0.85
+                    }
+                );
 
-        for (let k in resData.layers) {
-
-            layers[k] = L.tileLayer(
-                resData.layers[k],
-                {
-                    opacity: 0.8
-                }
-            );
-
-            if (
-                [
-                    "boundary",
-                    "ndwi1",
-                    "ndwi2",
-                    "mndwi1",
-                    "mndwi2"
-                ].includes(k)
-            ) {
+            // Chỉ bật sẵn ranh giới.
+            // Đường bờ, xói mòn, bồi tụ tải khi tick checkbox.
+            if (["boundary"].includes(k)) {
                 layers[k].addTo(map);
 
                 const chk = document.getElementById("chk_" + k);
@@ -283,33 +273,29 @@ async function startAnalysis() {
 
         const b = resData.bounds;
 
-        const bounds = L.latLngBounds(
-            b.map(p => [p[1], p[0]])
-        );
+        if (Array.isArray(b) && b.length > 2) {
+            const bounds = L.latLngBounds(
+                b.map(p => [p[1], p[0]])
+            );
 
-        map.fitBounds(bounds);
+            map.fitBounds(bounds);
+        }
 
-        updateStats();
+            updateStats();
+            renderCharts();
+            loadForecast();
 
-        renderCharts();
-
-        loadForecast();
-
-    } catch (err) {
-
-        console.log(err);
-
-        alert(err.message);
-
-    }
+        } catch (err) {
+            console.log(err);
+            alert(err.message);
+        }
 
     btn.innerHTML = "🚀 CHẠY PHÂN TÍCH";
     btn.disabled = false;
 }
 
 function updateStats() {
-
-    if (!resData) return;
+    if (!resData || !resData.stats) return;
 
     const s = resData.stats;
 
@@ -318,43 +304,32 @@ function updateStats() {
             <b>Năm ${y1Select.value}</b>
             <br><br>
             NDWI:
-            <span class="success">
-                ${Number(s.year1.NDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year1.NDWI || 0).toFixed(4)}</span>
             <br>
             MNDWI:
-            <span class="success">
-                ${Number(s.year1.MNDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year1.MNDWI || 0).toFixed(4)}</span>
         </div>
 
         <div class="info-box">
             <b>Năm ${y2Select.value}</b>
             <br><br>
             NDWI:
-            <span class="success">
-                ${Number(s.year2.NDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year2.NDWI || 0).toFixed(4)}</span>
             <br>
             MNDWI:
-            <span class="success">
-                ${Number(s.year2.MNDWI).toFixed(4)}
-            </span>
+            <span class="success">${Number(s.year2.MNDWI || 0).toFixed(4)}</span>
         </div>
 
         <div class="info-box">
             🔴 Xói mòn:
-            <span class="danger">
-                ${s.erosion_ha} ha
-            </span>
+            <span class="danger">${Number(s.erosion_ha || 0).toFixed(2)} ha</span>
             <br><br>
             🟢 Bồi tụ:
-            <span class="success">
-                ${s.accretion_ha} ha
-            </span>
+            <span class="success">${Number(s.accretion_ha || 0).toFixed(2)} ha</span>
         </div>
     `;
 }
+
 
 async function loadForecast() {
 
