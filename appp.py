@@ -376,9 +376,9 @@ def get_region_and_zone(province):
 
     # 2. NDWI/MNDWI chỉ hiện thành dải quanh ranh giới, không phủ toàn tỉnh
     # NDWI/MNDWI chỉ hiện thành dải quanh mép ranh giới, không phủ toàn bộ tỉnh
-    outer_band = aoi.buffer(800)
+    outer_band = aoi.buffer(3000)
 
-    inner_band = aoi.buffer(-800)
+    inner_band = aoi.buffer(-3000)
 
     index_zone = (
             outer_band
@@ -428,7 +428,7 @@ def get_region_and_zone(province):
     # Chỉ lấy vùng ngoài biển, sát vùng ven biển
     offshore_zone = (
         coast_aoi
-        .buffer(5000)
+        .buffer(1000)
         .difference(
             vietnam_land,
             1
@@ -1199,17 +1199,27 @@ def chat_ai():
             })
 
         prompt = f"""
-Bạn là chuyên gia GIS, viễn thám và biến động đường bờ biển.
+Bạn là trợ lý GIS và viễn thám.
 
+Yêu cầu bắt buộc:
+- Chỉ trả lời đúng câu hỏi người dùng hỏi.
+- Không tự viết thêm phần không liên quan.
+- Không tự giới thiệu lại thông tin tỉnh nếu người dùng không hỏi.
+- Không viết báo cáo dài nếu người dùng chỉ hỏi ngắn.
+- Nếu câu hỏi hỏi "ở đâu", chỉ trả lời vị trí/khu vực.
+- Nếu câu hỏi hỏi "vì sao", chỉ giải thích nguyên nhân.
+- Nếu câu hỏi hỏi "xói mòn", chỉ tập trung vào xói mòn.
+- Nếu câu hỏi hỏi "bồi tụ", chỉ tập trung vào bồi tụ.
+- Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng.
+
+Dữ liệu hiện có:
 Tỉnh/vùng nghiên cứu: {province}
-Dữ liệu thống kê: {stats}
-Câu hỏi người dùng: {question}
+Thống kê: {stats}
 
-Hãy trả lời bằng tiếng Việt, rõ ràng, có cấu trúc:
-1. Nhận xét xói mòn và bồi tụ.
-2. Nhận xét NDWI/MNDWI.
-3. Đánh giá nguy cơ biến động đường bờ.
-4. Đề xuất giải pháp quản lý ven biển.
+Câu hỏi người dùng:
+{question}
+
+Hãy trả lời trực tiếp câu hỏi trên.
 """
 
         try:
