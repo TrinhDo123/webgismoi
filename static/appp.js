@@ -147,15 +147,8 @@ async function loadHeavyLayer(layerId) {
 
         console.log("HEAVY LAYER URL:", heavyUrl);
 
-        const response = await fetch(heavyUrl);
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.error || "Không tải được lớp nâng cao"
-            );
-        }
+      const data = await fetchJSON(heavyUrl);
+        
 
         if (!data.layers || !data.layers[layerId]) {
             throw new Error(
