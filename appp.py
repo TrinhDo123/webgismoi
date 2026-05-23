@@ -376,9 +376,9 @@ def get_region_and_zone(province):
 
     # 2. NDWI/MNDWI chỉ hiện thành dải quanh ranh giới, không phủ toàn tỉnh
     # NDWI/MNDWI chỉ hiện thành dải quanh mép ranh giới, không phủ toàn bộ tỉnh
-    outer_band = aoi.buffer(3000)
+    outer_band = aoi.buffer(800)
 
-    inner_band = aoi.buffer(-3000)
+    inner_band = aoi.buffer(-800)
 
     index_zone = (
             outer_band
