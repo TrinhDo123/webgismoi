@@ -578,46 +578,11 @@ def get_analysis(offshore_zone, year, include_heavy=False):
     except Exception as e:
         print("STATS ERROR:", e)
 
-   # Tạo lớp hiển thị NDWI/MNDWI dạng viền, không tô toàn bộ tỉnh
-    ndwi_mask = (
-        ndwi
-        .gt(0)
-        .selfMask()
-    )
-
-    mndwi_mask = (
-        mndwi
-        .gt(0)
-        .selfMask()
-    )
-
-    ndwi_edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=ndwi_mask,
-            threshold=0.1,
-            sigma=1
-        )
-        .focal_max(1)
-        .selfMask()
-    )
-
-    mndwi_edge = (
-        ee.Algorithms.CannyEdgeDetector(
-            image=mndwi_mask,
-            threshold=0.1,
-            sigma=1
-        )
-        .focal_max(1)
-        .selfMask()
-    )
-
-    result = {
-        "ndwi": ndwi,
-        "mndwi": mndwi,
-        "ndwi_display": ndwi_edge.rename("ndwi_display"),
-        "mndwi_display": mndwi_edge.rename("mndwi_display"),
-        "vals": vals
-    }
+        result = {
+            "ndwi": ndwi,
+            "mndwi": mndwi,
+            "vals": vals
+        }
 
     if include_heavy:
 
@@ -791,19 +756,7 @@ def run_analysis():
     )
 
         bounds = safe_bounds(aoi)
-# Ảnh viền toàn bộ tỉnh để dùng cho boundary / NDWI / MNDWI
-        province_outline = (
-            ee.Image()
-            .byte()
-            .paint(
-                featureCollection=ee.FeatureCollection([
-                    ee.Feature(aoi)
-                ]),
-                color=1,
-                width=3
-            )
-            .selfMask()
-        )
+
         result = {
 
             "mode": "light",
@@ -814,7 +767,15 @@ def run_analysis():
 
                 "boundary":
                 get_map_url(
-                    province_outline,
+                    ee.Image()
+                    .byte()
+                    .paint(
+                        featureCollection=ee.FeatureCollection([
+                            ee.Feature(aoi)
+                        ]),
+                        color=1,
+                        width=3
+                    ),
                     {
                         "palette": ["yellow"]
                     }
@@ -822,33 +783,53 @@ def run_analysis():
 
                 "ndwi1":
                 get_map_url(
-                    province_outline,
+                    r1["ndwi"],
                     {
-                        "palette": ["#00ff66"]   # xanh lá năm 1
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "blue"
+                        ]
                     }
                 ),
 
                 "ndwi2":
                 get_map_url(
-                    province_outline,
+                    r2["ndwi"],
                     {
-                        "palette": ["#00e5ff"]   # xanh cyan năm 2
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "blue"
+                        ]
                     }
                 ),
 
                 "mndwi1":
                 get_map_url(
-                    province_outline,
+                    r1["mndwi"],
                     {
-                        "palette": ["#ff00ff"]   # tím năm 1
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "green"
+                        ]
                     }
                 ),
 
                 "mndwi2":
                 get_map_url(
-                    province_outline,
+                    r2["mndwi"],
                     {
-                        "palette": ["#2962ff"]   # xanh dương năm 2
+                        "min": -1,
+                        "max": 1,
+                        "palette": [
+                            "white",
+                            "green"
+                        ]
                     }
                 )
             },
@@ -1239,7 +1220,7 @@ Yêu cầu bắt buộc:
 - Nếu câu hỏi hỏi "theo dõi", chỉ tập trung vào khuyến nghị theo dõi.
 - Nếu câu hỏi hỏi "cảnh báo", chỉ tập trung vào khuyến nghị cảnh báo.
 - Nếu câu hỏi hỏi "xói mòn/bồi tụ", chỉ tập trung vào phân tích xói mòn và bồi tụ.
-- Nếu câu hỏi hỏi "ảnh hưởng", chỉ tập trung vào phân tích ảnh hưởng.
+- Nếu câu hỏi hỏi "ảnh hưởng", chỉ tập trung vào phân tích .
 - Nếu câu hỏi hỏi "xói mòn", chỉ tập trung vào xói mòn.
 - Nếu câu hỏi hỏi "bồi tụ", chỉ tập trung vào bồi tụ.
 - Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng.
